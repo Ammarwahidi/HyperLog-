@@ -1,0 +1,6 @@
+{
+  "name": "HyperLog — RP Hypertrophy & Calorie Tracker",
+  "description": "Standalone offline-first hypertrophy workout and calorie tracker featuring an interactive human muscle anatomy diagram with MV/MEV/MAV/MRV landmarks, RIR set logging, workout templates, exercise library, and native Android APK + Health Connect support.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

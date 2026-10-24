@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">HyperLog</string>
+    <string name="widget_title">HyperLog Progress &amp; Streak</string>
+    <string name="widget_description">Track your active training streak, weekly hypertrophy set volume, and daily calorie &amp; protein progress directly on your Android home screen.</string>
+</resources>

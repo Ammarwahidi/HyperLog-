@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/widget_description"
+    android:initialLayout="@layout/widget_streak_progress"
+    android:maxResizeHeight="440dp"
+    android:maxResizeWidth="540dp"
+    android:minHeight="110dp"
+    android:minResizeHeight="96dp"
+    android:minResizeWidth="140dp"
+    android:minWidth="240dp"
+    android:previewImage="@drawable/ic_hyperlog_crest"
+    android:previewLayout="@layout/widget_streak_progress"
+    android:resizeMode="horizontal|vertical"
+    android:targetCellHeight="2"
+    android:targetCellWidth="4"
+    android:updatePeriodMillis="1800000"
+    android:widgetCategory="home_screen" />

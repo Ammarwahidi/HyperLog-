@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Barbell + Hypertrophy Bar Emblem inside 66dp safe zone -->
+    <path
+        android:fillColor="#38BDF8"
+        android:pathData="M31,42h7v24h-7zM70,42h7v24h-7z" />
+    <path
+        android:fillColor="#2563EB"
+        android:pathData="M24,46h5v16h-5zM79,46h5v16h-5z" />
+    <path
+        android:fillColor="#F8FAFC"
+        android:pathData="M38,51.5h32v5h-32z" />
+    <path
+        android:fillColor="#34D399"
+        android:pathData="M49,34h10v8h-10zM49,66h10v8h-10z" />
+</vector>

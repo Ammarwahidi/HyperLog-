@@ -1,0 +1,15 @@
+{
+  "appName": "HyperLog",
+  "packageId": "com.hyperlog.rp",
+  "version": "1.1.0",
+  "minSdk": 26,
+  "targetSdk": 35,
+  "apkFileName": "HyperLog-v1.0-universal-release.apk",
+  "apkUrl": "/downloads/HyperLog-v1.0-universal-release.apk",
+  "sourceZipFileName": "HyperLog-AndroidStudio-Source.zip",
+  "sourceZipUrl": "/downloads/HyperLog-AndroidStudio-Source.zip",
+  "sizeBytes": 1483497,
+  "sourceZipBytes": 95391,
+  "sha256": "6cfbdc423f91b7067367f6d683770df26fb73a3a2738bc3035907b40a644b4a9",
+  "builtAt": "2026-10-23T21:32:40.463727+00:00"
+}
