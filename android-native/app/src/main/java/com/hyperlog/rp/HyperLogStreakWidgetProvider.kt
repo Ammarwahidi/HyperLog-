@@ -137,17 +137,97 @@ class HyperLogStreakWidgetProvider : AppWidgetProvider() {
             dispatchExplicitWidgetBroadcast(context, ACTION_REFRESH_WIDGET, SOURCE_DATA_SYNC)
         }
 
+        private const val PREFS_WEB_WIDGET_BRIDGE = "hyperlog_web_widget_bridge"
+        private const val KEY_WEB_SNAPSHOT_JSON = "web_widget_snapshot_json"
+
+        fun saveWebWidgetSnapshot(context: Context, snapshotJson: String, triggerSource: String) {
+            try {
+                val appCtx = context.applicationContext
+                appCtx.getSharedPreferences(PREFS_WEB_WIDGET_BRIDGE, Context.MODE_PRIVATE)
+                    .edit()
+                    .putString(KEY_WEB_SNAPSHOT_JSON, snapshotJson)
+                    .putLong("updatedAtEpochMs", System.currentTimeMillis())
+                    .apply()
+                pushRealTimeWidgetUpdate(appCtx, triggerSource.ifBlank { SOURCE_DATA_SYNC })
+                dispatchExplicitWidgetBroadcast(appCtx, ACTION_REFRESH_WIDGET, triggerSource.ifBlank { SOURCE_DATA_SYNC })
+            } catch (_: Exception) {
+                // Ignore malformed payload
+            }
+        }
+
+        private fun parseWebSnapshotJson(rawJson: String?): WidgetProgressSnapshot? {
+            if (rawJson.isNullOrBlank()) return null
+            return try {
+                val o = org.json.JSONObject(rawJson)
+                val activeWeek = o.optInt("activeWeek", 1).coerceIn(1, 5)
+                val weekMeta = MESOCYCLE_WEEKS.firstOrNull { it.week == activeWeek }
+                val weekSub = weekMeta?.shortLabel ?: "Wk $activeWeek"
+
+                val daysArr = o.optJSONArray("weekDays")
+                val last7Days = mutableListOf<Pair<String, Boolean>>()
+                if (daysArr != null) {
+                    for (i in 0 until daysArr.length()) {
+                        val d = daysArr.optJSONObject(i) ?: continue
+                        val letter = d.optString("dayLetter", "•").take(2)
+                        val active = d.optBoolean("active", false)
+                        last7Days.add(letter to active)
+                    }
+                }
+                while (last7Days.size < 7) {
+                    last7Days.add("•" to false)
+                }
+
+                val barsArr = o.optJSONArray("mesoSplitBars")
+                val splitBars = mutableListOf<WidgetMesoSplitBar>()
+                if (barsArr != null) {
+                    for (i in 0 until barsArr.length()) {
+                        val b = barsArr.optJSONObject(i) ?: continue
+                        splitBars.add(
+                            WidgetMesoSplitBar(
+                                shortTitle = b.optString("shortTitle", "Day ${i + 1}"),
+                                fullTitle = b.optString("fullTitle", "Day ${i + 1}"),
+                                completedSets = b.optInt("completedSets", 0),
+                                plannedSets = b.optInt("plannedSets", 1).coerceAtLeast(1)
+                            )
+                        )
+                    }
+                }
+
+                WidgetProgressSnapshot(
+                    streakDays = o.optInt("streakDays", 0).coerceAtLeast(0),
+                    bestStreakDays = o.optInt("bestStreakDays", 0).coerceAtLeast(0),
+                    last7Days = last7Days.takeLast(7),
+                    activeWeek = activeWeek,
+                    weekSubtitle = weekSub,
+                    completedSets = o.optInt("completedSets", 0).coerceAtLeast(0),
+                    plannedSets = o.optInt("plannedSets", 1).coerceAtLeast(1),
+                    mesoSplitBars = splitBars,
+                    todayCalories = o.optInt("todayCalories", 0).coerceAtLeast(0),
+                    targetCalories = o.optInt("targetCalories", 2400).coerceAtLeast(1),
+                    todayProteinG = o.optInt("todayProteinG", 0).coerceAtLeast(0),
+                    targetProteinG = o.optInt("targetProteinG", 160).coerceAtLeast(1)
+                )
+            } catch (_: Exception) {
+                null
+            }
+        }
+
         private fun loadCurrentSnapshot(appCtx: Context): WidgetProgressSnapshot {
-            val prefs = appCtx.getSharedPreferences("hyperlog_prefs", Context.MODE_PRIVATE)
-            val activeWeek = prefs.getInt("activeWeek", 3)
+            val webRaw = appCtx
+                .getSharedPreferences(PREFS_WEB_WIDGET_BRIDGE, Context.MODE_PRIVATE)
+                .getString(KEY_WEB_SNAPSHOT_JSON, null)
+            parseWebSnapshotJson(webRaw)?.let { return it }
+
             val db = HyperLogDatabase.getInstance(appCtx)
+            val prefs = HyperLogDatabase.getPrefsForActiveUser(appCtx)
+            val activeWeek = prefs.getInt("activeWeek", if (db.isGuestVault) 3 else 1)
             return db.getWidgetProgressSnapshot(activeWeek)
         }
 
         private fun pushRealTimeWidgetUpdate(context: Context, triggerSource: String) {
             try {
                 val appCtx = context.applicationContext
-                val prefs = appCtx.getSharedPreferences("hyperlog_prefs", Context.MODE_PRIVATE)
+                val prefs = HyperLogDatabase.getPrefsForActiveUser(appCtx)
                 prefs.edit()
                     .putLong("lastWidgetSyncEpochMs", System.currentTimeMillis())
                     .putString("lastWidgetTrigger", triggerSource)
@@ -519,7 +599,7 @@ class HyperLogStreakWidgetProvider : AppWidgetProvider() {
             }
 
             // 5. Deep-link PendingIntents into MainActivity tabs
-            views.setOnClickPendingIntent(R.id.widget_header_row, buildTabPendingIntent(context, 101, "anatomy"))
+            views.setOnClickPendingIntent(R.id.widget_header_row, buildTabPendingIntent(context, 101, "track"))
             views.setOnClickPendingIntent(R.id.widget_streak_badge, buildTabPendingIntent(context, 105, "settings"))
             views.setOnClickPendingIntent(R.id.widget_days_grid, buildTabPendingIntent(context, 102, "settings"))
             views.setOnClickPendingIntent(R.id.widget_col_training, buildTabPendingIntent(context, 103, "track"))

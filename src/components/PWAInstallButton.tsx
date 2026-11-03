@@ -19,9 +19,9 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({ compact = fa
       <button
         type="button"
         onClick={install}
-        className={`min-h-[40px] ${
-          compact ? 'px-3.5 py-2 text-xs' : 'w-full min-h-[42px] px-4 py-2 text-xs'
-        } font-bold rounded-xl hl-subtle border text-slate-800 dark:text-slate-100 hover:border-blue-500 transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap`}
+        className={`no-touch-delay min-h-[44px] ${
+          compact ? 'px-3.5 py-2 text-xs' : 'w-full px-4 py-2 text-xs'
+        } font-bold rounded-xl hl-subtle border text-slate-800 dark:text-slate-100 hover:border-blue-500 flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0`}
       >
         <Smartphone className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
         <span>Install Web App</span>
@@ -34,9 +34,9 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({ compact = fa
       <button
         type="button"
         onClick={() => setShowPhoneGuide(true)}
-        className={`min-h-[40px] ${
-          compact ? 'px-3 py-2 text-xs' : 'w-full min-h-[42px] px-4 py-2 text-xs'
-        } font-semibold rounded-xl hl-subtle border text-slate-700 dark:text-slate-200 hover:border-slate-400 transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap`}
+        className={`no-touch-delay min-h-[44px] ${
+          compact ? 'px-3 py-2 text-xs' : 'w-full px-4 py-2 text-xs'
+        } font-semibold rounded-xl hl-subtle border text-slate-700 dark:text-slate-200 hover:border-slate-400 flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0`}
       >
         <Smartphone className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
         <span>{isIOS ? 'Install on iPhone' : 'Add to Phone Home'}</span>
@@ -60,7 +60,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({ compact = fa
               <button
                 type="button"
                 onClick={() => setShowPhoneGuide(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white"
+                className="no-touch-delay min-h-[40px] min-w-[40px] flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white"
                 aria-label="Close phone install steps"
               >
                 <X className="w-4 h-4" />
@@ -99,7 +99,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({ compact = fa
             <button
               type="button"
               onClick={() => setShowPhoneGuide(false)}
-              className="w-full min-h-[40px] rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-bold text-white transition-colors"
+              className="no-touch-delay w-full min-h-[44px] rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-bold text-white"
             >
               Got It
             </button>

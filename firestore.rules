@@ -1,0 +1,589 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Pillar 0: Global Default-Deny Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Reusable Hardened Primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isBootstrappedAdminToken() {
+      return isVerifiedUser() && request.auth.token.email == 'wahidiammar@gmail.com';
+    }
+
+    function isAdmin() {
+      return isVerifiedUser() && (
+        isBootstrappedAdminToken() ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isActiveParentUser(userId) {
+      return (
+        exists(/databases/$(database)/documents/users/$(userId)) &&
+        get(/databases/$(database)/documents/users/$(userId)).data.uid == userId &&
+        get(/databases/$(database)/documents/users/$(userId)).data.accountStatus == 'active'
+      ) || (
+        existsAfter(/databases/$(database)/documents/users/$(userId)) &&
+        getAfter(/databases/$(database)/documents/users/$(userId)).data.uid == userId &&
+        getAfter(/databases/$(database)/documents/users/$(userId)).data.accountStatus == 'active'
+      );
+    }
+
+    // Entity Blueprint Validators (verbatim bounds & patterns from firebase-blueprint.json)
+    function isValidUserPublicProfile(data, userId) {
+      return data.keys().hasAll([
+          'uid',
+          'displayName',
+          'authProvider',
+          'mfaEnabled',
+          'accountStatus',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'uid',
+          'displayName',
+          'authProvider',
+          'mfaEnabled',
+          'accountStatus',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.uid is string &&
+        data.uid.size() >= 1 &&
+        data.uid.size() <= 128 &&
+        data.uid.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.uid == userId &&
+        data.displayName is string &&
+        data.displayName.size() >= 1 &&
+        data.displayName.size() <= 80 &&
+        data.authProvider is string &&
+        data.authProvider.size() <= 32 &&
+        (data.authProvider == 'password' || data.authProvider == 'google.com' || data.authProvider == 'facebook.com') &&
+        data.mfaEnabled is bool &&
+        data.accountStatus is string &&
+        data.accountStatus.size() <= 16 &&
+        (data.accountStatus == 'active' || data.accountStatus == 'deleted') &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidUserEncryptedPii(data, userId) {
+      return data.keys().hasAll([
+          'uid',
+          'encryptedEmailCipher',
+          'encryptedPhoneCipher',
+          'encryptedTotpSecretCipher',
+          'mfaMethod',
+          'recoveryCodesHash',
+          'encryptionAlgo',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'uid',
+          'encryptedEmailCipher',
+          'encryptedPhoneCipher',
+          'encryptedTotpSecretCipher',
+          'mfaMethod',
+          'recoveryCodesHash',
+          'encryptionAlgo',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.uid is string &&
+        data.uid.size() >= 1 &&
+        data.uid.size() <= 128 &&
+        data.uid.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.uid == userId &&
+        data.uid == request.auth.uid &&
+        data.encryptedEmailCipher is string &&
+        data.encryptedEmailCipher.size() >= 1 &&
+        data.encryptedEmailCipher.size() <= 1024 &&
+        data.encryptedPhoneCipher is string &&
+        data.encryptedPhoneCipher.size() <= 1024 &&
+        data.encryptedTotpSecretCipher is string &&
+        data.encryptedTotpSecretCipher.size() <= 1024 &&
+        data.mfaMethod is string &&
+        data.mfaMethod.size() <= 16 &&
+        (data.mfaMethod == 'none' || data.mfaMethod == 'totp') &&
+        data.recoveryCodesHash is string &&
+        data.recoveryCodesHash.size() <= 512 &&
+        data.encryptionAlgo is string &&
+        data.encryptionAlgo.size() <= 32 &&
+        data.encryptionAlgo == 'AES-256-GCM-PBKDF2' &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidUserPrivacyConsent(data, userId) {
+      return data.keys().hasAll([
+          'uid',
+          'policyVersion',
+          'essentialStorage',
+          'cloudSyncConsent',
+          'analyticsConsent',
+          'marketingConsent',
+          'doNotSellMyInfo',
+          'auditRetentionDays',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'uid',
+          'policyVersion',
+          'essentialStorage',
+          'cloudSyncConsent',
+          'analyticsConsent',
+          'marketingConsent',
+          'doNotSellMyInfo',
+          'auditRetentionDays',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.uid is string &&
+        data.uid.size() >= 1 &&
+        data.uid.size() <= 128 &&
+        data.uid.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.uid == userId &&
+        data.policyVersion is string &&
+        data.policyVersion.size() >= 1 &&
+        data.policyVersion.size() <= 32 &&
+        data.essentialStorage is bool &&
+        data.essentialStorage == true &&
+        data.cloudSyncConsent is bool &&
+        data.analyticsConsent is bool &&
+        data.marketingConsent is bool &&
+        data.doNotSellMyInfo is bool &&
+        data.auditRetentionDays is number &&
+        data.auditRetentionDays >= 30 &&
+        data.auditRetentionDays <= 365 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidUserIsolatedVaultChunk(data, userId) {
+      return data.keys().hasAll([
+          'uid',
+          'chunkType',
+          'encryptedPayloadCipher',
+          'recordCount',
+          'checksum',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'uid',
+          'chunkType',
+          'encryptedPayloadCipher',
+          'recordCount',
+          'checksum',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.uid is string &&
+        data.uid.size() >= 1 &&
+        data.uid.size() <= 128 &&
+        data.uid.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.uid == userId &&
+        data.uid == request.auth.uid &&
+        data.chunkType is string &&
+        data.chunkType.size() <= 32 &&
+        (
+          data.chunkType == 'nutrition_wellbeing' ||
+          data.chunkType == 'workouts_sets' ||
+          data.chunkType == 'goals_preferences'
+        ) &&
+        data.encryptedPayloadCipher is string &&
+        data.encryptedPayloadCipher.size() >= 1 &&
+        data.encryptedPayloadCipher.size() <= 450000 &&
+        data.recordCount is number &&
+        data.recordCount >= 0 &&
+        data.recordCount <= 100000 &&
+        data.checksum is string &&
+        data.checksum.size() >= 1 &&
+        data.checksum.size() <= 128 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidComplianceAuditLog(data, userId) {
+      return data.keys().hasAll([
+          'uid',
+          'eventId',
+          'action',
+          'category',
+          'actorUid',
+          'summary',
+          'ipHint',
+          'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'uid',
+          'eventId',
+          'action',
+          'category',
+          'actorUid',
+          'summary',
+          'ipHint',
+          'createdAt'
+        ]) &&
+        data.uid is string &&
+        data.uid.size() >= 1 &&
+        data.uid.size() <= 128 &&
+        data.uid.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.uid == userId &&
+        data.eventId is string &&
+        data.eventId.size() >= 1 &&
+        data.eventId.size() <= 128 &&
+        data.eventId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.action is string &&
+        data.action.size() <= 48 &&
+        (
+          data.action == 'AUTH_REGISTER' ||
+          data.action == 'AUTH_LOGIN' ||
+          data.action == 'AUTH_LOGOUT' ||
+          data.action == 'AUTH_PASSWORD_RESET_REQUEST' ||
+          data.action == 'AUTH_EMAIL_VERIFICATION_SENT' ||
+          data.action == 'MFA_ENABLED' ||
+          data.action == 'MFA_DISABLED' ||
+          data.action == 'MFA_VERIFIED' ||
+          data.action == 'PRIVACY_CONSENT_UPDATED' ||
+          data.action == 'DATA_EXPORT_GDPR' ||
+          data.action == 'VAULT_SYNC_WRITE' ||
+          data.action == 'VAULT_SYNC_READ' ||
+          data.action == 'PROFILE_UPDATED' ||
+          data.action == 'ACCOUNT_ERASURE_REQUESTED' ||
+          data.action == 'FEEDBACK_SUBMITTED'
+        ) &&
+        data.category is string &&
+        data.category.size() <= 32 &&
+        (
+          data.category == 'authentication' ||
+          data.category == 'mfa' ||
+          data.category == 'privacy' ||
+          data.category == 'data_access' ||
+          data.category == 'erasure'
+        ) &&
+        data.actorUid is string &&
+        data.actorUid.size() >= 1 &&
+        data.actorUid.size() <= 128 &&
+        data.actorUid.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.actorUid == request.auth.uid &&
+        data.summary is string &&
+        data.summary.size() >= 1 &&
+        data.summary.size() <= 280 &&
+        data.ipHint is string &&
+        data.ipHint.size() >= 1 &&
+        data.ipHint.size() <= 64 &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidUserBetaFeedback(data, userId, feedbackId) {
+      return data.keys().hasAll([
+          'uid',
+          'feedbackId',
+          'rating',
+          'category',
+          'message',
+          'deviceInfo',
+          'status',
+          'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'uid',
+          'feedbackId',
+          'rating',
+          'category',
+          'message',
+          'deviceInfo',
+          'status',
+          'createdAt'
+        ]) &&
+        data.uid is string &&
+        data.uid.size() >= 1 &&
+        data.uid.size() <= 128 &&
+        data.uid.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.uid == userId &&
+        data.feedbackId is string &&
+        data.feedbackId.size() >= 1 &&
+        data.feedbackId.size() <= 128 &&
+        data.feedbackId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.feedbackId == feedbackId &&
+        data.rating is number &&
+        data.rating >= 1 &&
+        data.rating <= 5 &&
+        data.category is string &&
+        data.category.size() >= 1 &&
+        data.category.size() <= 40 &&
+        (
+          data.category == 'Workout Tracker' ||
+          data.category == 'Forearms & Grip' ||
+          data.category == 'Breathing Audio' ||
+          data.category == 'Indian Recipes' ||
+          data.category == 'UI Simplicity' ||
+          data.category == 'Android APK Install' ||
+          data.category == 'Bug Report' ||
+          data.category == 'Feature Request'
+        ) &&
+        data.message is string &&
+        data.message.size() >= 3 &&
+        data.message.size() <= 1200 &&
+        data.deviceInfo is string &&
+        data.deviceInfo.size() >= 1 &&
+        data.deviceInfo.size() <= 240 &&
+        data.status is string &&
+        data.status.size() >= 1 &&
+        data.status.size() <= 20 &&
+        (data.status == 'open' || data.status == 'triaged' || data.status == 'resolved') &&
+        data.createdAt is timestamp;
+    }
+
+    // 1. Trusted Admin Directory (Read-Only for Owner/Admin; No Client Writes)
+    match /admins/{adminId} {
+      allow get: if isSignedIn() && isValidId(adminId) && (isOwner(adminId) || isAdmin());
+      allow list: if false;
+      allow create, update, delete: if false;
+    }
+
+    // 2. Non-PII User Public/Meta Profile Root
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if false;
+
+      allow create: if isVerifiedUser() &&
+        isOwner(userId) &&
+        isValidId(userId) &&
+        isValidUserPublicProfile(incoming(), userId) &&
+        incoming().uid == request.auth.uid &&
+        incoming().accountStatus == 'active' &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isVerifiedUser() &&
+        isValidId(userId) &&
+        isValidUserPublicProfile(incoming(), userId) &&
+        incoming().uid == existing().uid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          // Action 1: Owner or Admin updates profile display name, provider, or MFA state
+          (
+            (existing().accountStatus != 'deleted' || isAdmin()) &&
+            incoming().accountStatus == 'active' &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'mfaEnabled', 'authProvider', 'accountStatus', 'updatedAt']) &&
+            (isOwner(userId) || isAdmin())
+          ) ||
+          // Action 2: Mark account terminal deleted state
+          (
+            existing().accountStatus != 'deleted' &&
+            incoming().accountStatus == 'deleted' &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['accountStatus', 'updatedAt']) &&
+            (isOwner(userId) || isAdmin())
+          )
+        );
+
+      allow delete: if isVerifiedUser() && isValidId(userId) && (isOwner(userId) || isAdmin());
+
+      // 3. Split-Collection Isolated Encrypted PII & MFA Secret Vault (Strictly Owner-Only)
+      match /private/{docId} {
+        allow get: if isVerifiedUser() && isOwner(userId) && isValidId(userId) && isValidId(docId);
+        allow list: if false;
+
+        allow create: if isVerifiedUser() &&
+          isOwner(userId) &&
+          isValidId(userId) &&
+          isValidId(docId) &&
+          docId == 'pii' &&
+          isValidUserEncryptedPii(incoming(), userId) &&
+          incoming().createdAt == request.time &&
+          incoming().updatedAt == request.time &&
+          isActiveParentUser(userId);
+
+        allow update: if isVerifiedUser() &&
+          isOwner(userId) &&
+          isValidId(userId) &&
+          isValidId(docId) &&
+          docId == 'pii' &&
+          isValidUserEncryptedPii(incoming(), userId) &&
+          incoming().uid == existing().uid &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt == request.time &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'encryptedEmailCipher',
+            'encryptedPhoneCipher',
+            'encryptedTotpSecretCipher',
+            'mfaMethod',
+            'recoveryCodesHash',
+            'updatedAt'
+          ]) &&
+          isActiveParentUser(userId);
+
+        allow delete: if isVerifiedUser() && isOwner(userId) && isValidId(userId) && isValidId(docId);
+      }
+
+      // 4. GDPR & CCPA Privacy Consent Record
+      match /privacy/{docId} {
+        allow get: if isVerifiedUser() && isValidId(userId) && isValidId(docId) && (isOwner(userId) || isAdmin());
+        allow list: if false;
+
+        allow create: if isVerifiedUser() &&
+          isOwner(userId) &&
+          isValidId(userId) &&
+          isValidId(docId) &&
+          docId == 'consent' &&
+          isValidUserPrivacyConsent(incoming(), userId) &&
+          incoming().uid == request.auth.uid &&
+          incoming().createdAt == request.time &&
+          incoming().updatedAt == request.time &&
+          isActiveParentUser(userId);
+
+        allow update: if isVerifiedUser() &&
+          isValidId(userId) &&
+          isValidId(docId) &&
+          docId == 'consent' &&
+          isValidUserPrivacyConsent(incoming(), userId) &&
+          incoming().uid == existing().uid &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt == request.time &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'policyVersion',
+            'cloudSyncConsent',
+            'analyticsConsent',
+            'marketingConsent',
+            'doNotSellMyInfo',
+            'auditRetentionDays',
+            'updatedAt'
+          ]) &&
+          (
+            (isOwner(userId) && isActiveParentUser(userId)) ||
+            isAdmin()
+          );
+
+        allow delete: if isVerifiedUser() && isOwner(userId) && isValidId(userId) && isValidId(docId);
+      }
+
+      // 5. Isolated Per-User Encrypted Data Vault Partitions
+      match /vault/{docId} {
+        allow get: if isVerifiedUser() && isOwner(userId) && isValidId(userId) && isValidId(docId);
+        allow list: if false;
+
+        allow create: if isVerifiedUser() &&
+          isOwner(userId) &&
+          isValidId(userId) &&
+          isValidId(docId) &&
+          isValidUserIsolatedVaultChunk(incoming(), userId) &&
+          incoming().createdAt == request.time &&
+          incoming().updatedAt == request.time &&
+          isActiveParentUser(userId);
+
+        allow update: if isVerifiedUser() &&
+          isOwner(userId) &&
+          isValidId(userId) &&
+          isValidId(docId) &&
+          isValidUserIsolatedVaultChunk(incoming(), userId) &&
+          incoming().uid == existing().uid &&
+          incoming().chunkType == existing().chunkType &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt == request.time &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'encryptedPayloadCipher',
+            'recordCount',
+            'checksum',
+            'updatedAt'
+          ]) &&
+          isActiveParentUser(userId);
+
+        allow delete: if isVerifiedUser() && isOwner(userId) && isValidId(userId) && isValidId(docId);
+      }
+
+      // 6. Immutable GDPR/CCPA Compliance Audit Logs (No get()/exists() in list!)
+      match /auditLogs/{logId} {
+        allow get: if isVerifiedUser() && isValidId(userId) && isValidId(logId) && (isOwner(userId) || isAdmin());
+        allow list: if isVerifiedUser() &&
+          (isOwner(userId) || isBootstrappedAdminToken()) &&
+          resource.data.uid == userId;
+
+        allow create: if isVerifiedUser() &&
+          isOwner(userId) &&
+          isValidId(userId) &&
+          isValidId(logId) &&
+          isValidComplianceAuditLog(incoming(), userId) &&
+          incoming().createdAt == request.time &&
+          isActiveParentUser(userId);
+
+        allow update: if false;
+
+        allow delete: if isVerifiedUser() && isOwner(userId) && isValidId(userId) && isValidId(logId);
+      }
+
+      // 7. Post-Testing User Feedback & Bug Triage Reports
+      match /feedback/{feedbackId} {
+        allow get: if isVerifiedUser() && isValidId(userId) && isValidId(feedbackId) && (isOwner(userId) || isAdmin());
+        allow list: if isVerifiedUser() &&
+          (isOwner(userId) || isBootstrappedAdminToken()) &&
+          resource.data.uid == userId;
+
+        allow create: if isVerifiedUser() &&
+          isOwner(userId) &&
+          isValidId(userId) &&
+          isValidId(feedbackId) &&
+          isValidUserBetaFeedback(incoming(), userId, feedbackId) &&
+          incoming().uid == request.auth.uid &&
+          incoming().status == 'open' &&
+          incoming().createdAt == request.time &&
+          isActiveParentUser(userId);
+
+        allow update: if isVerifiedUser() &&
+          isValidId(userId) &&
+          isValidId(feedbackId) &&
+          isValidUserBetaFeedback(incoming(), userId, feedbackId) &&
+          incoming().uid == existing().uid &&
+          incoming().feedbackId == existing().feedbackId &&
+          incoming().createdAt == existing().createdAt &&
+          (
+            // Action 1: Owner edits rating or message before issue is resolved
+            (
+              existing().status != 'resolved' &&
+              isOwner(userId) &&
+              incoming().diff(existing()).affectedKeys().hasOnly(['rating', 'message']) &&
+              isActiveParentUser(userId)
+            ) ||
+            // Action 2: Admin triages or resolves feedback report
+            (
+              isAdmin() &&
+              incoming().diff(existing()).affectedKeys().hasOnly(['status'])
+            )
+          );
+
+        allow delete: if isVerifiedUser() && isValidId(userId) && isValidId(feedbackId) && (isOwner(userId) || isAdmin());
+      }
+    }
+  }
+}

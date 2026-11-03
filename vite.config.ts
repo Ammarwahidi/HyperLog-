@@ -7,35 +7,6 @@ import {VitePWA} from 'vite-plugin-pwa';
 export default defineConfig(() => {
   return {
     plugins: [
-      {
-        name: 'apk-mime-headers',
-        configureServer(server) {
-          server.middlewares.use((req, res, next) => {
-            const url = req.url?.split('?')[0] ?? '';
-            if (url.endsWith('.apk')) {
-              const filename = url.split('/').pop() || 'HyperLog-v2.0-universal-release.apk';
-              res.setHeader('Content-Type', 'application/vnd.android.package-archive');
-              res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-            } else if (url.endsWith('.zip')) {
-              const filename = url.split('/').pop() || 'HyperLog-AndroidStudio-Source.zip';
-              res.setHeader('Content-Type', 'application/zip');
-              res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-            }
-            next();
-          });
-        },
-        configurePreviewServer(server) {
-          server.middlewares.use((req, res, next) => {
-            const url = req.url?.split('?')[0] ?? '';
-            if (url.endsWith('.apk')) {
-              const filename = url.split('/').pop() || 'HyperLog-v2.0-universal-release.apk';
-              res.setHeader('Content-Type', 'application/vnd.android.package-archive');
-              res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-            }
-            next();
-          });
-        },
-      },
       react(),
       tailwindcss(),
       VitePWA({
@@ -46,10 +17,10 @@ export default defineConfig(() => {
           name: 'HyperLog — RP Hypertrophy & Calorie Tracker',
           short_name: 'HyperLog',
           description: 'Weekly muscle hypertrophy volume tracker (MV, MEV, MAV, MRV), RIR set logger, 7-day mesocycle workouts, and calorie tracker.',
-          theme_color: '#070E22',
-          background_color: '#070E22',
+          theme_color: '#F3F1FF',
+          background_color: '#F3F1FF',
           display: 'standalone',
-          orientation: 'portrait',
+          orientation: 'any',
           start_url: '/',
           scope: '/',
           icons: [
@@ -74,8 +45,20 @@ export default defineConfig(() => {
           ],
         },
         workbox: {
+          skipWaiting: true,
+          clientsClaim: true,
+          cleanupOutdatedCaches: true,
+          maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
-          navigateFallbackDenylist: [/^\/downloads\//],
+          globIgnores: ['**/downloads/**', '**/*.apk', '**/*.zip', '**/apk-manifest.json'],
+          navigateFallbackDenylist: [
+            /^\/downloads\//,
+            /^\/api\//,
+            /^\/auth\/callback/,
+            /^\/__\//,
+            /\.apk$/i,
+            /\.zip$/i,
+          ],
           runtimeCaching: [
             {
               urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
@@ -105,11 +88,38 @@ export default defineConfig(() => {
                 },
               },
             },
+            {
+              urlPattern: /^\/api\/catalog\/online/i,
+              handler: 'StaleWhileRevalidate',
+              options: {
+                cacheName: 'hyperlog-online-catalog-api',
+                expiration: {
+                  maxEntries: 4,
+                  maxAgeSeconds: 60 * 60 * 24 * 30,
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
+            {
+              urlPattern: /^https:\/\/raw\.githubusercontent\.com\/yuhonas\/free-exercise-db\/.*/i,
+              handler: 'StaleWhileRevalidate',
+              options: {
+                cacheName: 'hyperlog-github-exercise-db',
+                expiration: {
+                  maxEntries: 4,
+                  maxAgeSeconds: 60 * 60 * 24 * 30,
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
           ],
         },
         devOptions: {
-          enabled: true,
-          type: 'module',
+          enabled: false,
         },
       }),
     ],

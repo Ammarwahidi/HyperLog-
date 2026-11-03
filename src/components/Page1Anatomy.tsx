@@ -19,11 +19,11 @@ import {
   MAJOR_MUSCLE_GROUP_ORDER,
 } from '../data/exerciseCatalog';
 import { BodyDiagram } from './BodyDiagram';
-import { ArrowRight, Check, SlidersHorizontal, X } from 'lucide-react';
+import { ArrowRight, Check, ChevronDown, ChevronUp, SlidersHorizontal, X } from 'lucide-react';
 
 interface Page1AnatomyProps {
   activeWeek: number;
-  onChangeWeek: (week: number) => void;
+  onChangeWeek?: (week: number) => void;
   plan: WorkoutDayPlan[];
   landmarks: Record<MuscleId, MuscleLandmark>;
   setLogs: SetLogEntry[];
@@ -41,7 +41,6 @@ function formatFreqTarget(minFreq: number, maxFreq: number): string {
 
 export const Page1Anatomy: React.FC<Page1AnatomyProps> = ({
   activeWeek,
-  onChangeWeek,
   plan,
   landmarks,
   setLogs,
@@ -56,6 +55,9 @@ export const Page1Anatomy: React.FC<Page1AnatomyProps> = ({
   const [selectedMuscle, setSelectedMuscle] = useState<MuscleId>(MuscleId.Chest);
   const [isEditingLandmarks, setIsEditingLandmarks] = useState(false);
   const [draftLandmark, setDraftLandmark] = useState<MuscleLandmark | null>(null);
+  const [showWeeklyKpis, setShowWeeklyKpis] = useState<boolean>(false);
+  const [showMuscleAnalytics, setShowMuscleAnalytics] = useState<boolean>(false);
+  const [showFullMatrix, setShowFullMatrix] = useState<boolean>(false);
 
   const activeWeekMeta =
     MESOCYCLE_WEEKS.find((w) => w.week === activeWeek) ?? MESOCYCLE_WEEKS[2];
@@ -131,28 +133,6 @@ export const Page1Anatomy: React.FC<Page1AnatomyProps> = ({
       tonnageKgByMuscle,
     };
   }, [plan, setLogs, activeWeek]);
-
-  const selectedMuscleTrend = useMemo(() => {
-    return MESOCYCLE_WEEKS.map((wm) => {
-      const completed = setLogs.filter(
-        (s) => s.week === wm.week && s.muscleId === selectedMuscle && s.completed
-      ).length;
-      let planned = 0;
-      for (const d of plan) {
-        for (const ex of d.exercises) {
-          if (ex.muscleId === selectedMuscle) {
-            planned += ex.weekSets[wm.week] ?? 3;
-          }
-        }
-      }
-      return {
-        week: wm.week,
-        shortLabel: wm.shortLabel,
-        completed,
-        planned,
-      };
-    });
-  }, [setLogs, plan, selectedMuscle]);
 
   const selectedMuscleExercises = useMemo(() => {
     const list: Array<{ exercise: ExercisePrescription; completedSets: number }> = [];
@@ -244,100 +224,133 @@ export const Page1Anatomy: React.FC<Page1AnatomyProps> = ({
     setIsEditingLandmarks(false);
   };
 
+  const calmWeeklyHeadline =
+    kpiSummary.totalCompletedSets === 0
+      ? `All ${kpiSummary.totalMusclesInScope} muscle groups are rested and ready`
+      : kpiSummary.musclesInProductiveOrMav > 0
+      ? `${kpiSummary.musclesInProductiveOrMav} muscle ${
+          kpiSummary.musclesInProductiveOrMav === 1 ? 'group' : 'groups'
+        } in a steady growth rhythm`
+      : `${kpiSummary.totalCompletedSets} ${
+          kpiSummary.totalCompletedSets === 1 ? 'set' : 'sets'
+        } gently logged this week`;
+
+  const calmWeeklySubtext =
+    kpiSummary.totalCompletedSets === 0
+      ? 'Start whenever it feels right — every completed set gently updates your muscle map.'
+      : `You have logged ${kpiSummary.totalCompletedSets} of ${kpiSummary.totalPlannedSets} scheduled sets across ${kpiSummary.sessionsLogged} ${
+          kpiSummary.sessionsLogged === 1 ? 'session' : 'sessions'
+        }.`;
+
   return (
     <div className="space-y-6">
-      {/* Clean Overview Header & Responsive Week Selector */}
+      {/* Calm Overview Header */}
       <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
         <div className="min-w-0">
           <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white tracking-tight">
-            Weekly Hypertrophy Landmarks
+            Muscle Balance Map
           </h1>
           <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-1">
-            {activeWeekMeta.label} · Target {activeWeekMeta.targetRir} · {activeWeekMeta.volumeFocus}
-          </p>
-        </div>
-
-        {/* Full-width 5-col on mobile, compact segmented row on desktop */}
-        <div
-          className="grid grid-cols-5 sm:flex items-center gap-1 p-1 rounded-xl bg-slate-200/80 dark:bg-slate-800/90 shrink-0"
-          role="tablist"
-          aria-label="Mesocycle Week"
-        >
-          {MESOCYCLE_WEEKS.map((w) => (
-            <button
-              key={w.week}
-              type="button"
-              role="tab"
-              aria-selected={activeWeek === w.week}
-              onClick={() => onChangeWeek(w.week)}
-              className={`min-h-[40px] px-2 sm:px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap text-center ${
-                activeWeek === w.week
-                  ? 'bg-slate-900 dark:bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              {w.week === 5 ? 'Deload' : `Wk ${w.week}`}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* 4-Column Quantitative KPI Strip */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        <div className="hl-card rounded-2xl p-4">
-          <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-            {activeGroupLabel === 'All Muscles' ? 'Weekly Working Sets' : `${activeGroupLabel} Sets`}
-          </p>
-          <p className="text-2xl font-bold font-mono tabular-nums text-slate-900 dark:text-white mt-1 whitespace-nowrap">
-            {kpiSummary.totalCompletedSets}
-            <span className="text-sm font-normal text-slate-400 dark:text-slate-500">
-              {' '}
-              / {kpiSummary.totalPlannedSets}
-            </span>
-          </p>
-          <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-1 truncate">
-            Logged in Week {activeWeek}
-          </p>
-        </div>
-
-        <div className="hl-card rounded-2xl p-4">
-          <p className="text-xs text-slate-500 dark:text-slate-400 truncate">In Growth Window</p>
-          <p className="text-2xl font-bold font-mono tabular-nums text-blue-600 dark:text-blue-400 mt-1 whitespace-nowrap">
-            {kpiSummary.musclesInProductiveOrMav}
-            <span className="text-sm font-normal text-slate-400 dark:text-slate-500">
-              {' '}
-              / {kpiSummary.totalMusclesInScope}
-            </span>
-          </p>
-          <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-1 truncate">
-            Between MEV &amp; MRV
-          </p>
-        </div>
-
-        <div className="hl-card rounded-2xl p-4">
-          <p className="text-xs text-slate-500 dark:text-slate-400 truncate">Training Frequency</p>
-          <p className="text-2xl font-bold font-mono tabular-nums text-slate-900 dark:text-white mt-1 whitespace-nowrap">
-            {kpiSummary.sessionsLogged}
-            <span className="text-sm font-normal text-slate-400 dark:text-slate-500">
-              {' '}
-              / {Math.max(kpiSummary.sessionsLogged, kpiSummary.sessionsPlanned)}d
-            </span>
-          </p>
-          <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-1 truncate">
-            Sessions completed
-          </p>
-        </div>
-
-        <div className="hl-card rounded-2xl p-4">
-          <p className="text-xs text-slate-500 dark:text-slate-400 truncate">Target Proximity</p>
-          <p className="text-2xl font-bold font-mono tabular-nums text-emerald-600 dark:text-emerald-400 mt-1 whitespace-nowrap">
-            {activeWeekMeta.targetRir}
-          </p>
-          <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-1 truncate">
-            Reps in Reserve goal
+            Tap any muscle on the map to see what is rested, growing steadily, or ready for recovery
           </p>
         </div>
       </div>
+
+      {/* Single Calm Weekly Balance Card + Progressive Disclosure for Raw KPI Numbers */}
+      <section
+        data-testid="anatomy-calm-summary-card"
+        className="hl-card rounded-2xl p-4 sm:p-5 space-y-4"
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="space-y-1 min-w-0">
+            <p className="text-xs font-semibold text-sky-700 dark:text-sky-400">
+              Weekly Muscle Balance · Week {activeWeek}
+            </p>
+            <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
+              {calmWeeklyHeadline}
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">
+              {calmWeeklySubtext}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            data-testid="toggle-anatomy-kpis-btn"
+            aria-expanded={showWeeklyKpis}
+            onClick={() => setShowWeeklyKpis((v) => !v)}
+            className="no-touch-delay self-start sm:self-auto min-h-[40px] px-3.5 py-2 rounded-xl hl-subtle border text-xs font-semibold text-slate-700 dark:text-slate-200 hover:border-sky-400 transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0"
+          >
+            <span>{showWeeklyKpis ? 'Hide Weekly Numbers' : 'View Weekly Volume Numbers'}</span>
+            {showWeeklyKpis ? (
+              <ChevronUp className="w-3.5 h-3.5 shrink-0" />
+            ) : (
+              <ChevronDown className="w-3.5 h-3.5 shrink-0" />
+            )}
+          </button>
+        </div>
+
+        {showWeeklyKpis && (
+          <div
+            data-testid="anatomy-kpis-panel"
+            className="pt-3 border-t border-slate-200/80 dark:border-slate-800 grid grid-cols-2 lg:grid-cols-4 gap-3"
+          >
+            <div className="hl-subtle border rounded-xl p-3.5">
+              <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                {activeGroupLabel === 'All Muscles' ? 'Sets Logged' : `${activeGroupLabel} Sets`}
+              </p>
+              <p className="text-xl font-bold font-mono tabular-nums text-slate-900 dark:text-white mt-1 whitespace-nowrap">
+                {kpiSummary.totalCompletedSets}
+                <span className="text-xs font-normal text-slate-400 dark:text-slate-500">
+                  {' '}
+                  / {kpiSummary.totalPlannedSets}
+                </span>
+              </p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 truncate">
+                Scheduled this week
+              </p>
+            </div>
+
+            <div className="hl-subtle border rounded-xl p-3.5">
+              <p className="text-xs text-slate-500 dark:text-slate-400 truncate">In Sweet Spot</p>
+              <p className="text-xl font-bold font-mono tabular-nums text-emerald-600 dark:text-emerald-400 mt-1 whitespace-nowrap">
+                {kpiSummary.musclesInProductiveOrMav}
+                <span className="text-xs font-normal text-slate-400 dark:text-slate-500">
+                  {' '}
+                  / {kpiSummary.totalMusclesInScope}
+                </span>
+              </p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 truncate">
+                Growing comfortably
+              </p>
+            </div>
+
+            <div className="hl-subtle border rounded-xl p-3.5">
+              <p className="text-xs text-slate-500 dark:text-slate-400 truncate">Active Days</p>
+              <p className="text-xl font-bold font-mono tabular-nums text-slate-900 dark:text-white mt-1 whitespace-nowrap">
+                {kpiSummary.sessionsLogged}
+                <span className="text-xs font-normal text-slate-400 dark:text-slate-500">
+                  {' '}
+                  / {Math.max(kpiSummary.sessionsLogged, kpiSummary.sessionsPlanned)}d
+                </span>
+              </p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 truncate">
+                Sessions completed
+              </p>
+            </div>
+
+            <div className="hl-subtle border rounded-xl p-3.5">
+              <p className="text-xs text-slate-500 dark:text-slate-400 truncate">Effort Guide</p>
+              <p className="text-xl font-bold font-mono tabular-nums text-sky-600 dark:text-sky-400 mt-1 whitespace-nowrap">
+                {activeWeekMeta.targetRir}
+              </p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 truncate">
+                Leave clean reps in reserve
+              </p>
+            </div>
+          </div>
+        )}
+      </section>
 
       {/* Main 2-Column Split: Left Interactive Body Diagram | Right Group & Individual Progress */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
@@ -388,9 +401,9 @@ export const Page1Anatomy: React.FC<Page1AnatomyProps> = ({
                       key={mId}
                       type="button"
                       onClick={() => setSelectedMuscle(mId)}
-                      className={`w-full text-left p-3.5 rounded-xl border transition-colors ${
+                      className={`no-touch-delay w-full text-left p-3.5 rounded-xl border transition-colors ${
                         isFocused
-                          ? 'border-blue-600 dark:border-blue-500 hl-subtle'
+                          ? 'border-sky-600 dark:border-sky-500 hl-subtle'
                           : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
                       }`}
                     >
@@ -409,10 +422,10 @@ export const Page1Anatomy: React.FC<Page1AnatomyProps> = ({
                       <div className="mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400">
                         <span>
                           <strong className="text-slate-900 dark:text-white">{sets}</strong>/{planned} sets ·{' '}
-                          {freq}x/wk ({formatFreqTarget(lm.optimalFreqMin, lm.optimalFreqMax)})
+                          {freq}x/wk
                         </span>
                         <span>
-                          MAV {lm.mavMin}–{lm.mavMax} · MRV {lm.mrv}
+                          Goal {lm.mavMin}–{lm.mavMax} sets
                         </span>
                       </div>
                     </button>
@@ -422,7 +435,7 @@ export const Page1Anatomy: React.FC<Page1AnatomyProps> = ({
             </div>
           )}
 
-          {/* INDIVIDUAL MUSCLE PROGRESS INSPECTOR */}
+          {/* CALM INDIVIDUAL MUSCLE INSPECTOR */}
           <div className="hl-card rounded-2xl p-4 sm:p-6 space-y-5">
             <div className="flex items-start justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-4">
               <div className="min-w-0">
@@ -430,99 +443,29 @@ export const Page1Anatomy: React.FC<Page1AnatomyProps> = ({
                   <span>{currentLm.anatomicalGroup}</span>
                   <span aria-hidden="true">·</span>
                   <span className={`font-semibold ${currentZoneMeta.textColor}`}>
-                    {currentZoneMeta.label}
+                    {currentSets === 0 ? 'Rested & ready' : currentZoneMeta.shortLabel}
                   </span>
                 </div>
                 <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white tracking-tight mt-1">
                   {currentLm.name}
                 </h2>
               </div>
-
-              <button
-                type="button"
-                onClick={handleOpenEditLandmarks}
-                className="min-h-[40px] px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0"
-              >
-                <SlidersHorizontal className="w-3.5 h-3.5" />
-                Tune Landmarks
-              </button>
             </div>
 
-            {/* Inline Custom Landmark Editor — Mobile-Responsive Grid */}
-            {isEditingLandmarks && draftLandmark && (
-              <form
-                onSubmit={handleSaveLandmarks}
-                className="p-4 hl-subtle border rounded-xl space-y-3"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-slate-900 dark:text-white">
-                    Personalize Weekly Set Landmarks ({draftLandmark.shortName})
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setIsEditingLandmarks(false)}
-                    className="min-h-[36px] min-w-[36px] flex items-center justify-center text-slate-500 hover:text-slate-900 dark:hover:text-white"
-                    aria-label="Cancel landmark edit"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
-                  {(
-                    [
-                      { key: 'mv', label: 'MV (Maint.)' },
-                      { key: 'mev', label: 'MEV (Min)' },
-                      { key: 'mavMin', label: 'MAV Min' },
-                      { key: 'mavMax', label: 'MAV Max' },
-                      { key: 'mrv', label: 'MRV (Max)' },
-                    ] as const
-                  ).map((field) => (
-                    <label key={field.key} className="block">
-                      <span className="text-[11px] font-medium text-slate-600 dark:text-slate-300">
-                        {field.label}
-                      </span>
-                      <input
-                        type="number"
-                        min={0}
-                        max={40}
-                        value={draftLandmark[field.key]}
-                        onChange={(e) =>
-                          setDraftLandmark({
-                            ...draftLandmark,
-                            [field.key]: Math.max(0, Number(e.target.value)),
-                          })
-                        }
-                        className="mt-1 w-full min-h-[40px] px-2.5 py-1.5 text-xs font-mono tabular-nums hl-input rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
-                      />
-                    </label>
-                  ))}
-                </div>
-                <div className="flex justify-end gap-2 pt-1">
-                  <button
-                    type="submit"
-                    className="min-h-[40px] px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-lg flex items-center gap-1.5"
-                  >
-                    <Check className="w-3.5 h-3.5" />
-                    Save Landmarks
-                  </button>
-                </div>
-              </form>
-            )}
-
-            {/* MV / MEV / MAV / MRV Visual Volume Gauge */}
+            {/* Clean Visual Progress Gauge */}
             <div className="space-y-3">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <span className="text-xs font-medium text-slate-600 dark:text-slate-400">
-                  Completed Weekly Sets vs Landmarks
+                  Weekly Sets Progress
                 </span>
                 <span className="text-xs sm:text-sm font-mono tabular-nums font-semibold text-slate-900 dark:text-white">
-                  {currentSets} logged · {currentPlanned} scheduled sets
+                  {currentSets} logged · Goal {currentLm.mavMin}–{currentLm.mavMax} sets
                 </span>
               </div>
 
-              <div className="relative h-5 bg-slate-100 dark:bg-slate-800 rounded-lg overflow-hidden border border-slate-200/80 dark:border-slate-700/80">
+              <div className="relative h-4 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden border border-slate-200/80 dark:border-slate-700/80">
                 <div
-                  className="absolute top-0 bottom-0 bg-blue-100/80 dark:bg-blue-950/80 border-x border-blue-300/70 dark:border-blue-500/50"
+                  className="absolute top-0 bottom-0 bg-sky-100/80 dark:bg-sky-950/80 border-x border-sky-300/70 dark:border-sky-500/50"
                   style={{
                     left: pct(currentLm.mavMin),
                     width: `${Math.max(
@@ -530,160 +473,25 @@ export const Page1Anatomy: React.FC<Page1AnatomyProps> = ({
                       Math.round(((currentLm.mavMax - currentLm.mavMin) / gaugeScaleMax) * 100)
                     )}%`,
                   }}
-                  title={`MAV Window: ${currentLm.mavMin}–${currentLm.mavMax} sets/wk`}
+                  title={`Sweet Spot: ${currentLm.mavMin}–${currentLm.mavMax} sets/wk`}
                 />
                 <div
                   className={`relative h-full ${currentZoneMeta.barColor} transition-all duration-200`}
                   style={{ width: pct(currentSets) }}
                 />
               </div>
-
-              {/* Clean 4-Column Set Landmarks Grid (Sets / Week) */}
-              <div className="grid grid-cols-4 gap-2 sm:gap-2.5 pt-0.5 text-center">
-                <div className="p-2.5 rounded-xl hl-subtle border">
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">MV</p>
-                  <p className="text-sm font-bold font-mono tabular-nums text-slate-900 dark:text-white mt-0.5">
-                    {currentLm.mv}
-                  </p>
-                </div>
-                <div className="p-2.5 rounded-xl hl-subtle border">
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">MEV</p>
-                  <p className="text-sm font-bold font-mono tabular-nums text-sky-700 dark:text-sky-400 mt-0.5">
-                    {currentLm.mev}
-                  </p>
-                </div>
-                <div className="p-2.5 rounded-xl bg-blue-50/80 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800/80">
-                  <p className="text-[11px] text-blue-700 dark:text-blue-300 font-semibold">MAV</p>
-                  <p className="text-sm font-bold font-mono tabular-nums text-blue-800 dark:text-blue-200 mt-0.5 whitespace-nowrap">
-                    {currentLm.mavMin}–{currentLm.mavMax}
-                  </p>
-                </div>
-                <div className="p-2.5 rounded-xl hl-subtle border">
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">MRV</p>
-                  <p className="text-sm font-bold font-mono tabular-nums text-amber-700 dark:text-amber-400 mt-0.5">
-                    {currentLm.mrv}
-                  </p>
-                </div>
-              </div>
-
-              {/* Dedicated 3-Column Session & Effort Metrics Row (Fixes Cramped Frequency Box!) */}
-              <div className="grid grid-cols-3 gap-2 sm:gap-2.5">
-                <div className="p-2.5 sm:p-3 rounded-xl hl-subtle border">
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">Frequency</p>
-                  <p className="text-sm font-bold font-mono tabular-nums text-slate-900 dark:text-white mt-0.5 whitespace-nowrap">
-                    {currentFreq}
-                    <span className="text-xs font-normal text-slate-500 dark:text-slate-400">
-                      /{plannedFreq || Math.ceil(currentLm.optimalFreqMin)}d
-                    </span>
-                  </p>
-                  <p className="text-[10px] font-mono tabular-nums text-slate-500 dark:text-slate-400 mt-0.5 whitespace-nowrap">
-                    Opt {formatFreqTarget(currentLm.optimalFreqMin, currentLm.optimalFreqMax)}
-                  </p>
-                </div>
-
-                <div className="p-2.5 sm:p-3 rounded-xl hl-subtle border">
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">Avg Effort</p>
-                  <p
-                    className={`text-sm font-bold font-mono tabular-nums mt-0.5 whitespace-nowrap ${
-                      avgRirNum === null
-                        ? 'text-slate-900 dark:text-white'
-                        : avgRirNum < 1
-                        ? 'text-amber-600 dark:text-amber-400'
-                        : avgRirNum <= 3
-                        ? 'text-emerald-600 dark:text-emerald-400'
-                        : 'text-slate-700 dark:text-slate-300'
-                    }`}
-                  >
-                    {avgRir === '—' ? '—' : `${avgRir} RIR`}
-                  </p>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
-                    {avgRirNum === null
-                      ? 'No sets yet'
-                      : avgRirNum < 1
-                      ? 'Near failure'
-                      : avgRirNum <= 3
-                      ? 'Optimal zone'
-                      : 'Deload effort'}
-                  </p>
-                </div>
-
-                <div className="p-2.5 sm:p-3 rounded-xl hl-subtle border">
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">Weekly Load</p>
-                  <p className="text-sm font-bold font-mono tabular-nums text-slate-900 dark:text-white mt-0.5 truncate">
-                    {tonnageDisplay}
-                  </p>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
-                    Total tonnage
-                  </p>
-                </div>
-              </div>
-
-              <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed pt-0.5">
-                {currentLm.rpGuidance}
-              </p>
             </div>
 
-            {/* 5-Week Mesocycle Volume Progression Mini-Chart */}
-            <div className="pt-4 border-t border-slate-200 dark:border-slate-800">
-              <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-                <h3 className="text-xs font-semibold text-slate-900 dark:text-white">
-                  5-Week Set Progression ({currentLm.shortName})
-                </h3>
-                <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Logged vs Scheduled
-                </span>
-              </div>
-              <div className="grid grid-cols-5 gap-2">
-                {selectedMuscleTrend.map((item) => {
-                  const maxBar = Math.max(currentLm.mrv, 20);
-                  const plannedH = Math.min(100, Math.round((item.planned / maxBar) * 100));
-                  const compH = Math.min(100, Math.round((item.completed / maxBar) * 100));
-                  const isActive = item.week === activeWeek;
-                  return (
-                    <button
-                      key={item.week}
-                      type="button"
-                      onClick={() => onChangeWeek(item.week)}
-                      className={`p-2 rounded-xl border text-center transition-colors ${
-                        isActive
-                          ? 'border-blue-600 dark:border-blue-500 hl-subtle'
-                          : 'border-slate-200/80 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
-                      }`}
-                    >
-                      <div className="h-14 sm:h-16 flex items-end justify-center gap-1 px-0.5">
-                        <div
-                          className="w-2 sm:w-2.5 bg-slate-200 dark:bg-slate-700 rounded-t-xs"
-                          style={{ height: `${Math.max(8, plannedH)}%` }}
-                          title={`Planned: ${item.planned} sets`}
-                        />
-                        <div
-                          className="w-2 sm:w-2.5 bg-blue-600 dark:bg-blue-500 rounded-t-xs"
-                          style={{ height: `${item.completed > 0 ? Math.max(8, compH) : 0}%` }}
-                          title={`Completed: ${item.completed} sets`}
-                        />
-                      </div>
-                      <p className="text-[11px] font-semibold text-slate-800 dark:text-slate-200 mt-1.5 whitespace-nowrap">
-                        {item.week === 5 ? 'Deload' : `Wk ${item.week}`}
-                      </p>
-                      <p className="text-[10px] sm:text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400">
-                        {item.completed}/{item.planned}
-                      </p>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Scheduled Exercises Targeting This Muscle */}
-            <div className="pt-4 border-t border-slate-200 dark:border-slate-800 space-y-2.5">
+            {/* Scheduled Exercises Targeting This Muscle (Actionable & Calm Up Front) */}
+            <div className="pt-2 space-y-2.5">
               <h3 className="text-xs font-semibold text-slate-900 dark:text-white">
-                Scheduled Exercises for {currentLm.shortName}
+                Movements in Your Plan for {currentLm.shortName}
               </h3>
 
               {selectedMuscleExercises.length === 0 ? (
-                <p className="text-xs text-slate-500 dark:text-slate-400 py-3">
-                  No direct isolation prescribed in the active weekly schedule. Assign a template or
-                  add an exercise from the Library on the Workouts tab.
+                <p className="text-xs text-slate-500 dark:text-slate-400 py-2">
+                  No direct movement scheduled right now — you can add one anytime from the Library
+                  or Workouts tab.
                 </p>
               ) : (
                 <div className="divide-y divide-slate-200 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
@@ -701,15 +509,14 @@ export const Page1Anatomy: React.FC<Page1AnatomyProps> = ({
                           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-mono tabular-nums truncate">
                             Day {exercise.dayNumber} · {completedSets}/{targetSets} sets ·{' '}
                             {exercise.repRange} reps
-                            {exercise.restSeconds ? ` · ${exercise.restSeconds}s` : ''}
                           </p>
                         </div>
                         <button
                           type="button"
                           onClick={() => onJumpToTrackDay(exercise.dayNumber)}
-                          className="min-h-[40px] px-3 py-1.5 text-xs font-semibold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 rounded-lg transition-colors flex items-center gap-1 whitespace-nowrap shrink-0"
+                          className="no-touch-delay min-h-[40px] px-3 py-1.5 text-xs font-semibold text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-950/60 hover:bg-sky-100 dark:hover:bg-sky-900/60 rounded-lg transition-colors flex items-center gap-1 whitespace-nowrap shrink-0"
                         >
-                          Log Day {exercise.dayNumber}
+                          <span>Open Day {exercise.dayNumber}</span>
                           <ArrowRight className="w-3.5 h-3.5" />
                         </button>
                       </div>
@@ -718,36 +525,246 @@ export const Page1Anatomy: React.FC<Page1AnatomyProps> = ({
                 </div>
               )}
             </div>
+
+            {/* Progressive Disclosure Toggle for Landmarks, Custom Targets & Detailed Analytics */}
+            <div className="pt-3 border-t border-slate-200 dark:border-slate-800 space-y-4">
+              <button
+                type="button"
+                data-testid="toggle-muscle-landmarks-btn"
+                aria-expanded={showMuscleAnalytics || isEditingLandmarks}
+                onClick={() => {
+                  if (isEditingLandmarks) {
+                    setIsEditingLandmarks(false);
+                    setShowMuscleAnalytics(false);
+                  } else {
+                    setShowMuscleAnalytics((v) => !v);
+                  }
+                }}
+                className="no-touch-delay w-full min-h-[40px] px-3.5 py-2 rounded-xl hl-subtle border text-xs font-semibold text-slate-700 dark:text-slate-200 hover:border-sky-400 transition-colors flex items-center justify-between gap-2"
+              >
+                <span>
+                  {showMuscleAnalytics || isEditingLandmarks
+                    ? 'Hide Volume Landmarks & Detailed Metrics'
+                    : 'View Volume Landmarks & Custom Targets'}
+                </span>
+                {showMuscleAnalytics || isEditingLandmarks ? (
+                  <ChevronUp className="w-4 h-4 shrink-0" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 shrink-0" />
+                )}
+              </button>
+
+              {(showMuscleAnalytics || isEditingLandmarks) && (
+                <div data-testid="muscle-landmarks-panel" className="space-y-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-slate-500 dark:text-slate-400">
+                      Weekly set landmarks ({currentPlanned} scheduled)
+                    </span>
+                    {!isEditingLandmarks && (
+                      <button
+                        type="button"
+                        onClick={handleOpenEditLandmarks}
+                        className="no-touch-delay min-h-[38px] px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 hl-subtle border hover:border-sky-400 rounded-xl transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0"
+                      >
+                        <SlidersHorizontal className="w-3.5 h-3.5" />
+                        <span>Customize Targets</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {isEditingLandmarks && draftLandmark && (
+                    <form
+                      onSubmit={handleSaveLandmarks}
+                      className="p-4 hl-subtle border rounded-xl space-y-3"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-slate-900 dark:text-white">
+                          Personalize Weekly Targets ({draftLandmark.shortName})
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setIsEditingLandmarks(false)}
+                          className="no-touch-delay min-h-[36px] min-w-[36px] flex items-center justify-center text-slate-500 hover:text-slate-900 dark:hover:text-white"
+                          aria-label="Cancel landmark edit"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+                        {(
+                          [
+                            { key: 'mv', label: 'Maintain' },
+                            { key: 'mev', label: 'Steady Min' },
+                            { key: 'mavMin', label: 'Goal Min' },
+                            { key: 'mavMax', label: 'Goal Max' },
+                            { key: 'mrv', label: 'Rest Cap' },
+                          ] as const
+                        ).map((field) => (
+                          <label key={field.key} className="block">
+                            <span className="text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                              {field.label}
+                            </span>
+                            <input
+                              type="number"
+                              min={0}
+                              max={40}
+                              value={draftLandmark[field.key]}
+                              onChange={(e) =>
+                                setDraftLandmark({
+                                  ...draftLandmark,
+                                  [field.key]: Math.max(0, Number(e.target.value)),
+                                })
+                              }
+                              className="mt-1 w-full min-h-[40px] px-2.5 py-1.5 text-xs font-mono tabular-nums hl-input rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-600"
+                            />
+                          </label>
+                        ))}
+                      </div>
+                      <div className="flex justify-end gap-2 pt-1">
+                        <button
+                          type="submit"
+                          className="no-touch-delay min-h-[40px] px-4 py-1.5 bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 whitespace-nowrap"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          <span>Save Weekly Targets</span>
+                        </button>
+                      </div>
+                    </form>
+                  )}
+
+                  <div className="grid grid-cols-4 gap-2 sm:gap-2.5 text-center">
+                    <div className="p-2.5 rounded-xl hl-subtle border">
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">Maintain</p>
+                      <p className="text-sm font-bold font-mono tabular-nums text-slate-900 dark:text-white mt-0.5">
+                        {currentLm.mv}
+                      </p>
+                    </div>
+                    <div className="p-2.5 rounded-xl hl-subtle border">
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">Steady Start</p>
+                      <p className="text-sm font-bold font-mono tabular-nums text-sky-700 dark:text-sky-400 mt-0.5">
+                        {currentLm.mev}
+                      </p>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-emerald-50/80 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/80">
+                      <p className="text-[11px] text-emerald-700 dark:text-emerald-300 font-semibold">
+                        Sweet Spot
+                      </p>
+                      <p className="text-sm font-bold font-mono tabular-nums text-emerald-800 dark:text-emerald-200 mt-0.5 whitespace-nowrap">
+                        {currentLm.mavMin}–{currentLm.mavMax}
+                      </p>
+                    </div>
+                    <div className="p-2.5 rounded-xl hl-subtle border">
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">Rest Cap</p>
+                      <p className="text-sm font-bold font-mono tabular-nums text-amber-700 dark:text-amber-400 mt-0.5">
+                        {currentLm.mrv}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2 sm:gap-2.5">
+                    <div className="p-2.5 sm:p-3 rounded-xl hl-subtle border">
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">Days Active</p>
+                      <p className="text-sm font-bold font-mono tabular-nums text-slate-900 dark:text-white mt-0.5 whitespace-nowrap">
+                        {currentFreq}
+                        <span className="text-xs font-normal text-slate-500 dark:text-slate-400">
+                          /{plannedFreq || Math.ceil(currentLm.optimalFreqMin)}d
+                        </span>
+                      </p>
+                      <p className="text-[10px] font-mono tabular-nums text-slate-500 dark:text-slate-400 mt-0.5 whitespace-nowrap">
+                        Goal {formatFreqTarget(currentLm.optimalFreqMin, currentLm.optimalFreqMax)}
+                      </p>
+                    </div>
+
+                    <div className="p-2.5 sm:p-3 rounded-xl hl-subtle border">
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">Avg Effort</p>
+                      <p
+                        className={`text-sm font-bold font-mono tabular-nums mt-0.5 whitespace-nowrap ${
+                          avgRirNum === null
+                            ? 'text-slate-900 dark:text-white'
+                            : avgRirNum < 1
+                            ? 'text-amber-600 dark:text-amber-400'
+                            : avgRirNum <= 3
+                            ? 'text-emerald-600 dark:text-emerald-400'
+                            : 'text-slate-700 dark:text-slate-300'
+                        }`}
+                      >
+                        {avgRir === '—' ? '—' : `${avgRir} left`}
+                      </p>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                        {avgRirNum === null
+                          ? 'No sets yet'
+                          : avgRirNum < 1
+                          ? 'Very close to max'
+                          : avgRirNum <= 3
+                          ? 'Steady effort'
+                          : 'Light pace'}
+                      </p>
+                    </div>
+
+                    <div className="p-2.5 sm:p-3 rounded-xl hl-subtle border">
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">Weight Moved</p>
+                      <p className="text-sm font-bold font-mono tabular-nums text-slate-900 dark:text-white mt-0.5 truncate">
+                        {tonnageDisplay}
+                      </p>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                        Weekly total
+                      </p>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                    {currentLm.rpGuidance}
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Filtered Muscle Volume & Frequency Matrix (Responsive Mobile Cards + Desktop Table) */}
+      {/* Collapsible Full 13-Muscle Overview Table */}
       <div className="hl-card rounded-2xl overflow-hidden">
-        <div className="px-4 sm:px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
+        <div className="px-4 sm:px-5 py-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-bold text-slate-900 dark:text-white">
               {selectedMajorGroup === MajorMuscleGroup.All
-                ? `Muscle Volume & Frequency Matrix (Week ${activeWeek})`
-                : `${activeGroupLabel} Volume & Frequency Matrix (Week ${activeWeek})`}
+                ? 'Compare All 13 Muscle Groups'
+                : `Compare ${activeGroupLabel} Muscles`}
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Showing {filteredMuscles.length} of 13 anatomical regions · Tap any muscle to focus
+              Optional table view of weekly sets and sweet-spot ranges across {filteredMuscles.length}{' '}
+              regions
             </p>
           </div>
 
-          {selectedMajorGroup !== MajorMuscleGroup.All && (
+          <div className="flex items-center gap-2">
+            {selectedMajorGroup !== MajorMuscleGroup.All && (
+              <button
+                type="button"
+                onClick={() => handleSelectMajorGroup(MajorMuscleGroup.All)}
+                className="no-touch-delay min-h-[38px] px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors whitespace-nowrap"
+              >
+                Show All 13
+              </button>
+            )}
             <button
               type="button"
-              onClick={() => handleSelectMajorGroup(MajorMuscleGroup.All)}
-              className="min-h-[38px] px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors whitespace-nowrap"
+              onClick={() => setShowFullMatrix((v) => !v)}
+              className="no-touch-delay min-h-[38px] px-3.5 py-1.5 rounded-xl hl-subtle border text-xs font-semibold text-slate-700 dark:text-slate-200 hover:border-slate-400 transition-colors flex items-center gap-1.5 whitespace-nowrap"
             >
-              Show All 13 Muscles
+              <span>{showFullMatrix ? 'Hide Table' : 'Expand All Muscles'}</span>
+              {showFullMatrix ? (
+                <ChevronUp className="w-4 h-4" />
+              ) : (
+                <ChevronDown className="w-4 h-4" />
+              )}
             </button>
-          )}
+          </div>
         </div>
 
-        {/* Mobile Card Stack (Zero Horizontal Scroll Cramping on Phones) */}
+        {showFullMatrix && (
+          <div className="border-t border-slate-200 dark:border-slate-800">
+            {/* Mobile Card Stack (Zero Horizontal Scroll Cramping on Phones) */}
         <div className="md:hidden divide-y divide-slate-200 dark:divide-slate-800">
           {filteredMuscles.map((id) => {
             const lm = landmarks[id];
@@ -765,9 +782,9 @@ export const Page1Anatomy: React.FC<Page1AnatomyProps> = ({
                 key={id}
                 type="button"
                 onClick={() => setSelectedMuscle(id)}
-                className={`w-full text-left p-4 space-y-2 transition-colors ${
+                className={`no-touch-delay w-full text-left p-4 space-y-2 transition-colors ${
                   isSelected
-                    ? 'bg-blue-50/60 dark:bg-blue-950/30'
+                    ? 'bg-sky-50/60 dark:bg-sky-950/30'
                     : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
                 }`}
               >
@@ -787,12 +804,11 @@ export const Page1Anatomy: React.FC<Page1AnatomyProps> = ({
                     <strong className="text-slate-900 dark:text-white">{sets}</strong>/{planned} sets
                   </span>
                   <span>
-                    Freq <strong className="text-slate-900 dark:text-white">{freq}</strong>/
-                    {plannedF || Math.ceil(lm.optimalFreqMin)}d (
-                    {formatFreqTarget(lm.optimalFreqMin, lm.optimalFreqMax)})
+                    Active <strong className="text-slate-900 dark:text-white">{freq}</strong>/
+                    {plannedF || Math.ceil(lm.optimalFreqMin)}d
                   </span>
                   <span>
-                    MAV {lm.mavMin}–{lm.mavMax}
+                    Goal {lm.mavMin}–{lm.mavMax}
                   </span>
                 </div>
               </button>
@@ -871,6 +887,8 @@ export const Page1Anatomy: React.FC<Page1AnatomyProps> = ({
             </tbody>
           </table>
         </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -35,6 +35,30 @@ interface MuscleRegionProps {
   isDark: boolean;
 }
 
+const MUSCLE_PLANE_LABEL: Record<MuscleId, string> = {
+  [MuscleId.Chest]: 'Anterior · Upper Torso',
+  [MuscleId.Back]: 'Posterior · Lats & Rhomboids',
+  [MuscleId.Traps]: 'Anterior & Posterior · Upper Yoke',
+  [MuscleId.FrontDelts]: 'Anterior · Shoulder Cap',
+  [MuscleId.RearSideDelts]: 'Lateral & Posterior · Deltoid',
+  [MuscleId.Biceps]: 'Anterior · Upper Arm',
+  [MuscleId.Triceps]: 'Posterior · Upper Arm',
+  [MuscleId.Forearms]: 'Anterior & Posterior · Grip & Wrist',
+  [MuscleId.Quads]: 'Anterior · Thigh',
+  [MuscleId.Hamstrings]: 'Posterior · Thigh',
+  [MuscleId.Glutes]: 'Posterior · Hip Extensors',
+  [MuscleId.Calves]: 'Anterior & Posterior · Lower Leg',
+  [MuscleId.Abs]: 'Anterior · Trunk & Midline',
+};
+
+const ZONE_LEGEND_DESCRIPTIONS: Record<VolumeZone, string> = {
+  [VolumeZone.BelowMV]: 'Rested · Ready to train',
+  [VolumeZone.Maintenance]: 'Maintaining strength',
+  [VolumeZone.Productive]: 'Building steadily',
+  [VolumeZone.OptimalMAV]: 'Weekly sweet spot',
+  [VolumeZone.Overreaching]: 'Time to recover',
+};
+
 const MusclePath: React.FC<MuscleRegionProps> = ({
   muscleId,
   d,
@@ -51,10 +75,10 @@ const MusclePath: React.FC<MuscleRegionProps> = ({
   const isSelected = selectedMuscle === muscleId;
   const isHovered = hoveredMuscle === muscleId;
 
-  const inactiveFill = isDark ? 'var(--hl-svg-inactive)' : '#F1F5F9';
+  const inactiveFill = isDark ? 'var(--hl-svg-inactive)' : '#E9EEF6';
   const inactiveStroke = isDark ? 'var(--hl-svg-bone-stroke)' : '#CBD5E1';
-  const selectedStroke = isDark ? '#F8FAFC' : '#0F172A';
-  const hoveredStroke = isDark ? '#E2E8F0' : '#1E293B';
+  const selectedStroke = isDark ? '#F8FAFC' : '#1E1B4B';
+  const hoveredStroke = isDark ? '#E2E8F0' : '#312E81';
 
   const effectiveFill = isInActiveGroup ? fill : inactiveFill;
   const effectiveStroke = isInActiveGroup
@@ -68,21 +92,24 @@ const MusclePath: React.FC<MuscleRegionProps> = ({
     ? isSelected
       ? 1
       : isHovered
-      ? 0.94
-      : 0.86
+      ? 0.95
+      : 0.88
     : isHovered
     ? 0.65
-    : 0.35;
+    : 0.34;
 
   return (
     <path
       d={d}
+      data-muscle-id={muscleId}
       fill={effectiveFill}
       fillOpacity={effectiveOpacity}
       stroke={effectiveStroke}
-      strokeWidth={isInActiveGroup && isSelected ? 2.6 : isHovered ? 1.9 : 1.1}
+      strokeWidth={isInActiveGroup && isSelected ? 2.75 : isHovered ? 2.0 : 1.15}
       strokeLinejoin="round"
-      className="cursor-pointer transition-opacity duration-150 focus:outline-none"
+      strokeLinecap="round"
+      filter={isInActiveGroup && isSelected ? 'url(#hl-selected-muscle-glow)' : undefined}
+      className="cursor-pointer transition-all duration-150 focus:outline-none"
       role="button"
       tabIndex={0}
       aria-label={label}
@@ -131,7 +158,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
     const stroke =
       zone === VolumeZone.BelowMV
         ? isDark
-          ? '#475569'
+          ? '#64748B'
           : '#94A3B8'
         : meta.svgStroke;
     return {
@@ -151,21 +178,38 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
     MAJOR_MUSCLE_GROUP_ORDER.find((g) => g.id === selectedMajorGroup) ??
     MAJOR_MUSCLE_GROUP_ORDER[0];
 
+  const scaleMax = Math.max(calloutInfo.lm.mrv + 4, calloutInfo.sets + 2, 24);
+  const pctOfScale = (v: number) => Math.min(100, Math.max(0, Math.round((v / scaleMax) * 100)));
+  const currentBarPct = pctOfScale(calloutInfo.sets);
+  const mevMarkerPct = pctOfScale(calloutInfo.lm.mev);
+  const mavMinMarkerPct = pctOfScale(calloutInfo.lm.mavMin);
+  const mrvMarkerPct = pctOfScale(calloutInfo.lm.mrv);
+
+  const fiberLineColor = isDark ? '#0F172A' : '#FFFFFF';
+
   return (
-    <div className="hl-card rounded-2xl p-4 sm:p-6 space-y-4">
+    <div
+      data-testid="anatomical-volume-map"
+      className="hl-card rounded-2xl p-4 sm:p-6 space-y-4"
+    >
       {/* Header & Plane Controls */}
       <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-200 dark:border-slate-800">
         <div className="min-w-0">
-          <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100 tracking-tight">
-            Anatomical Volume Map
-          </h2>
+          <div className="flex flex-wrap items-baseline gap-2">
+            <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100 tracking-tight">
+              Body Balance Map
+            </h2>
+            <span className="text-xs text-slate-500 dark:text-slate-400">
+              · Tap any muscle to check progress
+            </span>
+          </div>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
             {activeGroupMeta.summary}
           </p>
         </div>
 
         <div
-          className="flex items-center gap-1 p-1 rounded-xl bg-slate-100 dark:bg-slate-800/90"
+          className="flex items-center gap-1 p-1 rounded-xl hl-subtle border"
           role="group"
           aria-label="Anatomical view plane"
         >
@@ -173,14 +217,15 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
             <button
               key={plane}
               type="button"
+              data-testid={`anatomy-plane-${plane}`}
               onClick={() => setPlaneMode(plane)}
-              className={`min-h-[36px] px-3 py-1 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 ${
+              className={`no-touch-delay min-h-[36px] px-3 py-1 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 ${
                 planeMode === plane
-                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  ? 'bg-slate-900 dark:bg-blue-600 text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
-              {plane === 'dual' ? 'Split' : plane === 'anterior' ? 'Front' : 'Back'}
+              {plane === 'dual' ? 'Split View' : plane === 'anterior' ? 'Front' : 'Back'}
             </button>
           ))}
         </div>
@@ -189,19 +234,19 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
       {/* Major Muscle Group Filter Bar */}
       <div className="space-y-2">
         <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-          <span className="font-medium">Major Muscle Group</span>
+          <span className="font-semibold">Focus Area</span>
           {selectedMajorGroup !== MajorMuscleGroup.All && (
             <button
               type="button"
               onClick={() => onSelectMajorGroup(MajorMuscleGroup.All)}
-              className="text-blue-600 dark:text-blue-400 hover:underline font-semibold"
+              className="no-touch-delay text-sky-700 dark:text-sky-400 hover:underline font-semibold"
             >
-              Show All
+              Show All Areas
             </button>
           )}
         </div>
         <div
-          className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-100 dark:bg-slate-800/80 overflow-x-auto no-scrollbar"
+          className="flex items-center gap-1.5 p-1 rounded-xl hl-subtle border overflow-x-auto no-scrollbar"
           role="tablist"
           aria-label="Filter diagram by major muscle group"
         >
@@ -212,9 +257,10 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                 key={group.id}
                 type="button"
                 role="tab"
+                data-testid={`anatomy-group-${group.id}`}
                 aria-selected={isActive}
                 onClick={() => onSelectMajorGroup(group.id)}
-                className={`min-h-[38px] px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 ${
+                className={`no-touch-delay min-h-[38px] px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 ${
                   isActive
                     ? 'bg-slate-900 dark:bg-blue-600 text-white shadow-xs'
                     : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
@@ -227,77 +273,175 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
         </div>
       </div>
 
-      {/* Live Hover / Selection Readout Strip */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 px-3.5 py-2.5 rounded-xl hl-subtle border text-xs">
-        <div className="flex items-center gap-2 font-semibold text-slate-900 dark:text-slate-100 min-w-0">
+      {/* Redesigned Live Landmark Progress Callout Card */}
+      <div
+        data-testid="anatomy-live-callout"
+        className="p-3.5 rounded-xl hl-subtle border space-y-2.5"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="flex items-center gap-2 min-w-0">
+            <span
+              className="inline-block w-3.5 h-3.5 rounded-sm border shrink-0"
+              style={{
+                backgroundColor: calloutInfo.fill,
+                borderColor: calloutInfo.stroke,
+              }}
+            />
+            <span className="font-bold text-sm text-slate-900 dark:text-slate-100 truncate">
+              {calloutInfo.lm.name}
+            </span>
+            <span className="hidden sm:inline text-[11px] text-slate-500 dark:text-slate-400">
+              ({MUSCLE_PLANE_LABEL[activeCalloutMuscle]})
+            </span>
+          </div>
+
           <span
-            className="inline-block w-3 h-3 rounded-xs border shrink-0"
-            style={{
-              backgroundColor: calloutInfo.fill,
-              borderColor: calloutInfo.stroke,
-            }}
-          />
-          <span className="truncate">{calloutInfo.lm.name}</span>
-          <span className="text-slate-400 dark:text-slate-500" aria-hidden="true">
-            ·
-          </span>
-          <span className={`whitespace-nowrap ${VOLUME_ZONE_META[calloutInfo.zone].textColor}`}>
+            className={`text-xs font-semibold ${VOLUME_ZONE_META[calloutInfo.zone].textColor}`}
+          >
             {VOLUME_ZONE_META[calloutInfo.zone].shortLabel}
           </span>
         </div>
-        <div className="font-mono tabular-nums text-[11px] sm:text-xs text-slate-600 dark:text-slate-300 whitespace-nowrap">
-          <strong className="text-slate-900 dark:text-white">{calloutInfo.sets}</strong> sets · MEV{' '}
-          {calloutInfo.lm.mev} · MAV {calloutInfo.lm.mavMin}–{calloutInfo.lm.mavMax} · MRV{' '}
-          {calloutInfo.lm.mrv}
+
+        {/* Calm Weekly Progress Bar */}
+        <div className="space-y-1.5">
+          <div className="relative h-2.5 rounded-full bg-slate-200/90 dark:bg-slate-800 overflow-hidden">
+            <div
+              className="h-full rounded-full transition-all duration-300"
+              style={{
+                width: `${Math.max(calloutInfo.sets > 0 ? 5 : 0, currentBarPct)}%`,
+                backgroundColor:
+                  calloutInfo.zone === VolumeZone.BelowMV ? '#64748B' : calloutInfo.fill,
+              }}
+            />
+            <span
+              aria-hidden="true"
+              title={`Minimum effective: ${calloutInfo.lm.mev} sets`}
+              className="absolute top-0 bottom-0 w-0.5 bg-sky-500/70 dark:bg-sky-300/80"
+              style={{ left: `${mevMarkerPct}%` }}
+            />
+            <span
+              aria-hidden="true"
+              title={`Sweet spot: ${calloutInfo.lm.mavMin} sets`}
+              className="absolute top-0 bottom-0 w-0.5 bg-emerald-600/80 dark:bg-emerald-300/90"
+              style={{ left: `${mavMinMarkerPct}%` }}
+            />
+            <span
+              aria-hidden="true"
+              title={`Recovery cap: ${calloutInfo.lm.mrv} sets`}
+              className="absolute top-0 bottom-0 w-0.5 bg-amber-500/80 dark:bg-amber-400/90"
+              style={{ left: `${mrvMarkerPct}%` }}
+            />
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 font-mono tabular-nums text-[11px] text-slate-600 dark:text-slate-300">
+            <span>
+              <strong className="text-slate-900 dark:text-white">{calloutInfo.sets}</strong> sets
+              done this week
+            </span>
+            <span>
+              Weekly goal: {calloutInfo.lm.mavMin}–{calloutInfo.lm.mavMax} sets
+            </span>
+          </div>
         </div>
       </div>
 
-      {/* Dual or Single Anatomical SVG Canvas */}
+      {/* Dual or Single Anatomical Studio Stage */}
       <div
-        className={`grid gap-3 sm:gap-5 items-center py-1 ${
+        className={`grid gap-3 sm:gap-4 items-stretch py-1 ${
           planeMode === 'dual' ? 'grid-cols-2' : 'grid-cols-1'
         }`}
       >
         {/* ANTERIOR VIEW */}
         {planeMode !== 'posterior' && (
-          <div className="flex flex-col items-center">
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2">
-              Anterior (Front)
-            </span>
+          <div className="hl-subtle border rounded-2xl p-3 flex flex-col items-center justify-between">
+            <div className="w-full flex items-center justify-between gap-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1.5 px-1">
+              <span>Anterior (Front)</span>
+              <span className="font-mono tabular-nums text-[10px] text-slate-400 dark:text-slate-500">
+                Pectorals · Quads · Abs
+              </span>
+            </div>
+
             <svg
+              data-testid="anatomy-svg-anterior"
               viewBox="0 0 220 440"
               className={`w-full h-auto select-none ${
-                planeMode === 'anterior' ? 'max-w-[255px] sm:max-w-[275px]' : 'max-w-[200px] sm:max-w-[225px]'
+                planeMode === 'anterior'
+                  ? 'max-w-[265px] sm:max-w-[285px]'
+                  : 'max-w-[205px] sm:max-w-[232px]'
               }`}
               role="img"
               aria-label="Anterior human muscle diagram"
             >
+              <defs>
+                <filter id="hl-selected-muscle-glow" x="-15%" y="-15%" width="130%" height="130%">
+                  <feDropShadow
+                    dx="0"
+                    dy="1"
+                    stdDeviation="2.2"
+                    floodColor={isDark ? '#60A5FA' : '#4F46E5'}
+                    floodOpacity="0.45"
+                  />
+                </filter>
+                <radialGradient id="hl-stage-anterior" cx="50%" cy="42%" r="54%">
+                  <stop
+                    offset="0%"
+                    stopColor={isDark ? '#3B82F6' : '#818CF8'}
+                    stopOpacity={isDark ? '0.12' : '0.10'}
+                  />
+                  <stop offset="100%" stopColor="#000000" stopOpacity="0" />
+                </radialGradient>
+              </defs>
+
+              {/* Subtle Anatomical Stage Backdrop & Midline */}
+              <ellipse cx="110" cy="216" rx="88" ry="198" fill="url(#hl-stage-anterior)" />
+              <line
+                x1="110"
+                y1="10"
+                x2="110"
+                y2="426"
+                stroke={isDark ? '#334155' : '#CBD5E1'}
+                strokeWidth="0.75"
+                strokeDasharray="3 4"
+                opacity="0.55"
+              />
+
+              {/* Cranium, Neck, Pelvis, Knees, Hands & Feet Silhouette */}
               <g
                 style={{
                   fill: 'var(--hl-svg-bone)',
                   stroke: 'var(--hl-svg-bone-stroke)',
                 }}
-                strokeWidth="1"
+                strokeWidth="1.1"
               >
-                <ellipse cx="110" cy="34" rx="19" ry="24" />
-                <path d="M101 56 L119 56 L122 72 L98 72 Z" />
-                <path d="M84 198 L136 198 L130 222 L110 228 L90 222 Z" />
-                <ellipse cx="89" cy="316" rx="11" ry="9" />
-                <ellipse cx="131" cy="316" rx="11" ry="9" />
-                <ellipse cx="38" cy="226" rx="8" ry="13" transform="rotate(10 38 226)" />
-                <ellipse cx="182" cy="226" rx="8" ry="13" transform="rotate(-10 182 226)" />
-                <path d="M80 398 L95 398 L98 418 L74 418 Z" />
-                <path d="M125 398 L140 398 L146 418 L122 418 Z" />
+                <ellipse cx="110" cy="33" rx="18.5" ry="23.5" />
+                <path d="M101 55 L119 55 L122 72 L98 72 Z" />
+                {/* Clavicle Landmark Line */}
+                <path
+                  d="M77 80 Q94 75 108 80 M143 80 Q126 75 112 80"
+                  fill="none"
+                  strokeWidth="1.2"
+                />
+                {/* Pelvis / Iliac Crest */}
+                <path d="M84 197 L136 197 L131 221 L110 228 L89 221 Z" />
+                {/* Patella */}
+                <ellipse cx="89" cy="316" rx="10.5" ry="8.5" />
+                <ellipse cx="131" cy="316" rx="10.5" ry="8.5" />
+                {/* Hands */}
+                <ellipse cx="37" cy="226" rx="7.5" ry="12.5" transform="rotate(11 37 226)" />
+                <ellipse cx="183" cy="226" rx="7.5" ry="12.5" transform="rotate(-11 183 226)" />
+                {/* Feet */}
+                <path d="M80 398 L95 398 L98 418 L73 418 Z" />
+                <path d="M125 398 L140 398 L147 418 L122 418 Z" />
               </g>
 
-              {/* TRAPS */}
+              {/* TRAPS (Upper Yoke) */}
               {(() => {
                 const v = getMuscleVisual(MuscleId.Traps);
                 return (
                   <>
                     <MusclePath
                       muscleId={MuscleId.Traps}
-                      d="M98 64 L72 78 L96 82 Z"
+                      d="M98 63 L72 78 L96 82 Z"
                       isInActiveGroup={v.isInActiveGroup}
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
@@ -310,7 +454,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                     />
                     <MusclePath
                       muscleId={MuscleId.Traps}
-                      d="M122 64 L148 78 L124 82 Z"
+                      d="M122 63 L148 78 L124 82 Z"
                       isInActiveGroup={v.isInActiveGroup}
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
@@ -325,14 +469,14 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                 );
               })()}
 
-              {/* SIDE DELTS */}
+              {/* LATERAL DELTS */}
               {(() => {
                 const v = getMuscleVisual(MuscleId.RearSideDelts);
                 return (
                   <>
                     <MusclePath
                       muscleId={MuscleId.RearSideDelts}
-                      d="M72 78 C56 82 50 98 54 114 L67 110 C67 98 70 86 76 81 Z"
+                      d="M72 78 C55 82 49 98 54 114 L67 110 C67 97 70 86 76 80 Z"
                       isInActiveGroup={v.isInActiveGroup}
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
@@ -345,7 +489,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                     />
                     <MusclePath
                       muscleId={MuscleId.RearSideDelts}
-                      d="M148 78 C164 82 170 98 166 114 L153 110 C153 98 150 86 144 81 Z"
+                      d="M148 78 C165 82 171 98 166 114 L153 110 C153 97 150 86 144 80 Z"
                       isInActiveGroup={v.isInActiveGroup}
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
@@ -395,14 +539,14 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                 );
               })()}
 
-              {/* CHEST */}
+              {/* CHEST (Clavicular & Sternal Pectoralis Contour) */}
               {(() => {
                 const v = getMuscleVisual(MuscleId.Chest);
                 return (
                   <>
                     <MusclePath
                       muscleId={MuscleId.Chest}
-                      d="M88 82 L109 82 L109 124 C96 127 81 124 76 112 Z"
+                      d="M88 82 L109 82 L109 124 C95 128 80 124 76 112 Z"
                       isInActiveGroup={v.isInActiveGroup}
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
@@ -415,7 +559,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                     />
                     <MusclePath
                       muscleId={MuscleId.Chest}
-                      d="M132 82 L111 82 L111 124 C124 127 139 124 144 112 Z"
+                      d="M132 82 L111 82 L111 124 C125 128 140 124 144 112 Z"
                       isInActiveGroup={v.isInActiveGroup}
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
@@ -429,15 +573,26 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                   </>
                 );
               })()}
+              {/* Upper/Lower Pec Fiber Separation */}
+              <g
+                stroke={fiberLineColor}
+                strokeWidth="1"
+                strokeOpacity="0.45"
+                fill="none"
+                pointerEvents="none"
+              >
+                <path d="M84 96 Q97 101 108 97" />
+                <path d="M136 96 Q123 101 112 97" />
+              </g>
 
-              {/* LATS FLARE */}
+              {/* ANTERIOR LAT FLARE */}
               {(() => {
                 const v = getMuscleVisual(MuscleId.Back);
                 return (
                   <>
                     <MusclePath
                       muscleId={MuscleId.Back}
-                      d="M76 114 L84 125 L85 162 L77 146 Z"
+                      d="M76 114 L84 125 L85 162 L76 146 Z"
                       isInActiveGroup={v.isInActiveGroup}
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
@@ -450,7 +605,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                     />
                     <MusclePath
                       muscleId={MuscleId.Back}
-                      d="M144 114 L136 125 L135 162 L143 146 Z"
+                      d="M144 114 L136 125 L135 162 L144 146 Z"
                       isInActiveGroup={v.isInActiveGroup}
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
@@ -465,7 +620,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                 );
               })()}
 
-              {/* ABS */}
+              {/* ABS & OBLIQUES */}
               {(() => {
                 const v = getMuscleVisual(MuscleId.Abs);
                 return (
@@ -485,15 +640,16 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                 );
               })()}
               <g
-                stroke={isDark ? '#0F172A' : '#FFFFFF'}
+                stroke={fiberLineColor}
                 strokeWidth="1.2"
-                strokeOpacity="0.6"
+                strokeOpacity="0.62"
+                fill="none"
                 pointerEvents="none"
               >
                 <line x1="110" y1="128" x2="110" y2="194" />
-                <line x1="90" y1="145" x2="130" y2="145" />
-                <line x1="90" y1="163" x2="130" y2="163" />
-                <line x1="91" y1="180" x2="129" y2="180" />
+                <path d="M90 144 Q110 147 130 144" />
+                <path d="M90 162 Q110 165 130 162" />
+                <path d="M91 180 Q110 183 129 180" />
               </g>
 
               {/* BICEPS */}
@@ -503,7 +659,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                   <>
                     <MusclePath
                       muscleId={MuscleId.Biceps}
-                      d="M54 115 L72 114 L66 160 L48 158 C47 142 49 128 54 115 Z"
+                      d="M54 115 L72 114 L66 160 L48 158 C46 142 49 128 54 115 Z"
                       isInActiveGroup={v.isInActiveGroup}
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
@@ -516,7 +672,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                     />
                     <MusclePath
                       muscleId={MuscleId.Biceps}
-                      d="M166 115 L148 114 L154 160 L172 158 C173 142 171 128 166 115 Z"
+                      d="M166 115 L148 114 L154 160 L172 158 C174 142 171 128 166 115 Z"
                       isInActiveGroup={v.isInActiveGroup}
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
@@ -566,14 +722,14 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                 );
               })()}
 
-              {/* QUADS */}
+              {/* QUADS (Rectus Femoris & Vastus Sweep) */}
               {(() => {
                 const v = getMuscleVisual(MuscleId.Quads);
                 return (
                   <>
                     <MusclePath
                       muscleId={MuscleId.Quads}
-                      d="M82 214 L107 224 L101 306 L77 306 C72 274 74 242 82 214 Z"
+                      d="M82 214 L107 224 L101 306 L77 306 C71 274 73 242 82 214 Z"
                       isInActiveGroup={v.isInActiveGroup}
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
@@ -586,7 +742,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                     />
                     <MusclePath
                       muscleId={MuscleId.Quads}
-                      d="M138 214 L113 224 L119 306 L143 306 C148 274 146 242 138 214 Z"
+                      d="M138 214 L113 224 L119 306 L143 306 C149 274 147 242 138 214 Z"
                       isInActiveGroup={v.isInActiveGroup}
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
@@ -600,15 +756,25 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                   </>
                 );
               })()}
+              <g
+                stroke={fiberLineColor}
+                strokeWidth="1"
+                strokeOpacity="0.45"
+                fill="none"
+                pointerEvents="none"
+              >
+                <path d="M92 226 Q89 266 91 302" />
+                <path d="M128 226 Q131 266 129 302" />
+              </g>
 
-              {/* CALVES */}
+              {/* ANTERIOR CALVES / TIBIALIS */}
               {(() => {
                 const v = getMuscleVisual(MuscleId.Calves);
                 return (
                   <>
                     <MusclePath
                       muscleId={MuscleId.Calves}
-                      d="M78 326 L100 326 C103 352 99 376 95 397 L80 397 C76 376 74 352 78 326 Z"
+                      d="M78 326 L100 326 C103 352 99 376 95 397 L80 397 C75 376 73 352 78 326 Z"
                       isInActiveGroup={v.isInActiveGroup}
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
@@ -621,7 +787,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                     />
                     <MusclePath
                       muscleId={MuscleId.Calves}
-                      d="M142 326 L120 326 C117 352 121 376 125 397 L140 397 C144 376 146 352 142 326 Z"
+                      d="M142 326 L120 326 C117 352 121 376 125 397 L140 397 C145 376 147 352 142 326 Z"
                       isInActiveGroup={v.isInActiveGroup}
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
@@ -641,36 +807,66 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
 
         {/* POSTERIOR VIEW */}
         {planeMode !== 'anterior' && (
-          <div className="flex flex-col items-center">
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2">
-              Posterior (Back)
-            </span>
+          <div className="hl-subtle border rounded-2xl p-3 flex flex-col items-center justify-between">
+            <div className="w-full flex items-center justify-between gap-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1.5 px-1">
+              <span>Posterior (Back)</span>
+              <span className="font-mono tabular-nums text-[10px] text-slate-400 dark:text-slate-500">
+                Lats · Glutes · Hamstrings
+              </span>
+            </div>
+
             <svg
+              data-testid="anatomy-svg-posterior"
               viewBox="0 0 220 440"
               className={`w-full h-auto select-none ${
-                planeMode === 'posterior' ? 'max-w-[255px] sm:max-w-[275px]' : 'max-w-[200px] sm:max-w-[225px]'
+                planeMode === 'posterior'
+                  ? 'max-w-[265px] sm:max-w-[285px]'
+                  : 'max-w-[205px] sm:max-w-[232px]'
               }`}
               role="img"
               aria-label="Posterior human muscle diagram"
             >
+              <defs>
+                <radialGradient id="hl-stage-posterior" cx="50%" cy="42%" r="54%">
+                  <stop
+                    offset="0%"
+                    stopColor={isDark ? '#10B981' : '#6366F1'}
+                    stopOpacity={isDark ? '0.12' : '0.10'}
+                  />
+                  <stop offset="100%" stopColor="#000000" stopOpacity="0" />
+                </radialGradient>
+              </defs>
+
+              <ellipse cx="110" cy="216" rx="88" ry="198" fill="url(#hl-stage-posterior)" />
+              <line
+                x1="110"
+                y1="10"
+                x2="110"
+                y2="426"
+                stroke={isDark ? '#334155' : '#CBD5E1'}
+                strokeWidth="0.75"
+                strokeDasharray="3 4"
+                opacity="0.55"
+              />
+
               <g
                 style={{
                   fill: 'var(--hl-svg-bone)',
                   stroke: 'var(--hl-svg-bone-stroke)',
                 }}
-                strokeWidth="1"
+                strokeWidth="1.1"
               >
-                <ellipse cx="110" cy="34" rx="19" ry="24" />
-                <path d="M101 56 L119 56 L122 70 L98 70 Z" />
-                <ellipse cx="89" cy="316" rx="11" ry="8" />
-                <ellipse cx="131" cy="316" rx="11" ry="8" />
-                <ellipse cx="38" cy="226" rx="8" ry="13" transform="rotate(10 38 226)" />
-                <ellipse cx="182" cy="226" rx="8" ry="13" transform="rotate(-10 182 226)" />
+                <ellipse cx="110" cy="33" rx="18.5" ry="23.5" />
+                <path d="M101 55 L119 55 L122 70 L98 70 Z" />
+                <ellipse cx="89" cy="316" rx="10.5" ry="8" />
+                <ellipse cx="131" cy="316" rx="10.5" ry="8" />
+                <ellipse cx="37" cy="226" rx="7.5" ry="12.5" transform="rotate(11 37 226)" />
+                <ellipse cx="183" cy="226" rx="7.5" ry="12.5" transform="rotate(-11 183 226)" />
                 <path d="M80 398 L95 398 L96 418 L78 418 Z" />
                 <path d="M125 398 L140 398 L142 418 L124 418 Z" />
               </g>
 
-              {/* TRAPS */}
+              {/* TRAPS (Diamond Upper & Mid Trapezius) */}
               {(() => {
                 const v = getMuscleVisual(MuscleId.Traps);
                 return (
@@ -697,7 +893,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                   <>
                     <MusclePath
                       muscleId={MuscleId.RearSideDelts}
-                      d="M72 79 C55 83 50 98 54 114 L77 109 L85 95 Z"
+                      d="M72 79 C55 83 49 98 54 114 L77 109 L85 95 Z"
                       isInActiveGroup={v.isInActiveGroup}
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
@@ -710,7 +906,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                     />
                     <MusclePath
                       muscleId={MuscleId.RearSideDelts}
-                      d="M148 79 C165 83 170 98 166 114 L143 109 L135 95 Z"
+                      d="M148 79 C165 83 171 98 166 114 L143 109 L135 95 Z"
                       isInActiveGroup={v.isInActiveGroup}
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
@@ -725,14 +921,14 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                 );
               })()}
 
-              {/* BACK */}
+              {/* LATS & ERECTORS */}
               {(() => {
                 const v = getMuscleVisual(MuscleId.Back);
                 return (
                   <>
                     <MusclePath
                       muscleId={MuscleId.Back}
-                      d="M85 96 L109 132 L109 194 L87 194 L75 138 L77 110 Z"
+                      d="M85 96 L109 132 L109 194 L87 194 L74 138 L77 110 Z"
                       isInActiveGroup={v.isInActiveGroup}
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
@@ -745,7 +941,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                     />
                     <MusclePath
                       muscleId={MuscleId.Back}
-                      d="M135 96 L111 132 L111 194 L133 194 L145 138 L143 110 Z"
+                      d="M135 96 L111 132 L111 194 L133 194 L146 138 L143 110 Z"
                       isInActiveGroup={v.isInActiveGroup}
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
@@ -759,15 +955,27 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                   </>
                 );
               })()}
+              {/* Scapular & Thoracolumbar Detail */}
+              <g
+                stroke={fiberLineColor}
+                strokeWidth="1"
+                strokeOpacity="0.45"
+                fill="none"
+                pointerEvents="none"
+              >
+                <line x1="110" y1="66" x2="110" y2="192" />
+                <path d="M84 128 Q96 140 106 154" />
+                <path d="M136 128 Q124 140 114 154" />
+              </g>
 
-              {/* TRICEPS */}
+              {/* TRICEPS (Horseshoe Contour) */}
               {(() => {
                 const v = getMuscleVisual(MuscleId.Triceps);
                 return (
                   <>
                     <MusclePath
                       muscleId={MuscleId.Triceps}
-                      d="M54 115 L73 112 L66 160 L48 158 C47 142 49 128 54 115 Z"
+                      d="M54 115 L73 112 L66 160 L48 158 C46 142 49 128 54 115 Z"
                       isInActiveGroup={v.isInActiveGroup}
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
@@ -780,7 +988,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                     />
                     <MusclePath
                       muscleId={MuscleId.Triceps}
-                      d="M166 115 L147 112 L154 160 L172 158 C173 142 171 128 166 115 Z"
+                      d="M166 115 L147 112 L154 160 L172 158 C174 142 171 128 166 115 Z"
                       isInActiveGroup={v.isInActiveGroup}
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
@@ -837,7 +1045,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                   <>
                     <MusclePath
                       muscleId={MuscleId.Glutes}
-                      d="M86 195 L109 195 L109 236 C95 242 78 234 78 214 Z"
+                      d="M86 195 L109 195 L109 236 C95 243 77 234 78 214 Z"
                       isInActiveGroup={v.isInActiveGroup}
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
@@ -850,7 +1058,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                     />
                     <MusclePath
                       muscleId={MuscleId.Glutes}
-                      d="M134 195 L111 195 L111 236 C125 242 142 234 142 214 Z"
+                      d="M134 195 L111 195 L111 236 C125 243 143 234 142 214 Z"
                       isInActiveGroup={v.isInActiveGroup}
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
@@ -865,14 +1073,14 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                 );
               })()}
 
-              {/* HAMSTRINGS */}
+              {/* HAMSTRINGS (Biceps Femoris & Semitendinosus) */}
               {(() => {
                 const v = getMuscleVisual(MuscleId.Hamstrings);
                 return (
                   <>
                     <MusclePath
                       muscleId={MuscleId.Hamstrings}
-                      d="M79 235 C86 241 99 242 107 238 L101 307 L78 307 C74 282 75 256 79 235 Z"
+                      d="M79 235 C86 241 99 242 107 238 L101 307 L78 307 C73 282 74 256 79 235 Z"
                       isInActiveGroup={v.isInActiveGroup}
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
@@ -885,7 +1093,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                     />
                     <MusclePath
                       muscleId={MuscleId.Hamstrings}
-                      d="M141 235 C134 241 121 242 113 238 L119 307 L142 307 C146 282 145 256 141 235 Z"
+                      d="M141 235 C134 241 121 242 113 238 L119 307 L142 307 C147 282 146 256 141 235 Z"
                       isInActiveGroup={v.isInActiveGroup}
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
@@ -899,8 +1107,18 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                   </>
                 );
               })()}
+              <g
+                stroke={fiberLineColor}
+                strokeWidth="1"
+                strokeOpacity="0.45"
+                fill="none"
+                pointerEvents="none"
+              >
+                <line x1="91" y1="242" x2="90" y2="303" />
+                <line x1="129" y1="242" x2="130" y2="303" />
+              </g>
 
-              {/* CALVES */}
+              {/* POSTERIOR CALVES (Gastrocnemius Dual Heads) */}
               {(() => {
                 const v = getMuscleVisual(MuscleId.Calves);
                 return (
@@ -934,6 +1152,16 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                   </>
                 );
               })()}
+              <g
+                stroke={fiberLineColor}
+                strokeWidth="1"
+                strokeOpacity="0.45"
+                fill="none"
+                pointerEvents="none"
+              >
+                <line x1="89" y1="328" x2="88" y2="366" />
+                <line x1="131" y1="328" x2="132" y2="366" />
+              </g>
             </svg>
           </div>
         )}
@@ -941,9 +1169,12 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
 
       {/* Quick-Tap Muscle Selector Strip for Effortless Thumb Selection on Mobile */}
       <div className="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-1.5">
-        <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block">
-          Quick-Select Region ({activeGroupMuscles.length})
-        </span>
+        <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+          <span className="font-semibold">
+            Quick-Select Muscle ({activeGroupMuscles.length})
+          </span>
+          <span>Tap region or chip to inspect</span>
+        </div>
         <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
           {activeGroupMuscles.map((mId) => {
             const lm = landmarks[mId];
@@ -953,8 +1184,9 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
               <button
                 key={mId}
                 type="button"
+                data-testid={`anatomy-chip-${mId}`}
                 onClick={() => onSelectMuscle(mId)}
-                className={`min-h-[36px] px-3 py-1 text-xs font-medium rounded-lg border transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
+                className={`no-touch-delay min-h-[38px] px-3 py-1 text-xs font-medium rounded-xl border transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
                   active
                     ? 'bg-slate-900 dark:bg-blue-600 text-white border-slate-900 dark:border-blue-500 font-semibold'
                     : 'hl-subtle text-slate-700 dark:text-slate-300 hover:border-slate-400 dark:hover:border-slate-600'
@@ -966,7 +1198,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                     active ? 'text-blue-100' : 'text-slate-500 dark:text-slate-400'
                   }`}
                 >
-                  {sets}
+                  {sets}/{lm.mavMax}
                 </span>
               </button>
             );
@@ -974,8 +1206,11 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
         </div>
       </div>
 
-      {/* Accessible Volume Landmark Legend */}
-      <div className="pt-3 border-t border-slate-200 dark:border-slate-800 grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
+      {/* Enhanced Accessible Volume Landmark Legend */}
+      <div
+        data-testid="anatomy-volume-legend"
+        className="pt-3 border-t border-slate-200 dark:border-slate-800 grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs"
+      >
         {(
           [
             VolumeZone.BelowMV,
@@ -989,12 +1224,20 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
           const fill =
             z === VolumeZone.BelowMV ? (isDark ? '#334155' : '#CBD5E1') : meta.svgFill;
           return (
-            <div key={z} className="flex items-center gap-2 text-slate-600 dark:text-slate-300">
+            <div
+              key={z}
+              className="p-2 rounded-xl hl-subtle border flex items-start gap-2 text-slate-700 dark:text-slate-200"
+            >
               <span
-                className="w-3 h-3 rounded-xs shrink-0 border"
+                className="w-3 h-3 rounded-xs shrink-0 border mt-0.5"
                 style={{ backgroundColor: fill, borderColor: meta.svgStroke }}
               />
-              <span className="truncate font-medium">{meta.shortLabel}</span>
+              <div className="min-w-0">
+                <p className="truncate font-bold text-[11px] leading-tight">{meta.shortLabel}</p>
+                <p className="truncate text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                  {ZONE_LEGEND_DESCRIPTIONS[z]}
+                </p>
+              </div>
             </div>
           );
         })}

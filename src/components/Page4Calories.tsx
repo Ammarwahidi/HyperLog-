@@ -26,10 +26,13 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  Flame,
   Plus,
   Search,
   Trash2,
+  X,
 } from 'lucide-react';
+import { DailyNutritionWeightChart } from './DailyNutritionWeightChart';
 
 interface Page4CaloriesProps {
   nutritionByDate: Record<string, DailyNutritionRecord>;
@@ -37,6 +40,8 @@ interface Page4CaloriesProps {
   preferences: AppPreferences;
   savedCustomMeals: SavedCustomMeal[];
   weeklyCompletedSetsCount: number;
+  streakDays?: number;
+  todayActive?: boolean;
   isDark?: boolean;
   onSaveDailyNutrition: (record: DailyNutritionRecord, addedMeal?: MealEntry) => Promise<void>;
   onSaveGoals: (goals: NutritionGoals) => Promise<void>;
@@ -83,6 +88,8 @@ export const Page4Calories: React.FC<Page4CaloriesProps> = ({
   preferences,
   savedCustomMeals,
   weeklyCompletedSetsCount,
+  streakDays = 0,
+  todayActive = false,
   isDark = false,
   onSaveDailyNutrition,
   onSaveGoals,
@@ -92,8 +99,12 @@ export const Page4Calories: React.FC<Page4CaloriesProps> = ({
   const todayIso = getTodayISO();
   const [selectedDate, setSelectedDate] = useState<string>(todayIso);
 
-  // Offline Calorie Calculator State
+  // Offline Calorie Calculator & Progressive Disclosure State
   const [isCalcExpanded, setIsCalcExpanded] = useState<boolean>(false);
+  const [showBodyMetrics, setShowBodyMetrics] = useState<boolean>(false);
+  const [showFoodCatalog, setShowFoodCatalog] = useState<boolean>(false);
+  const [showPresetMeals, setShowPresetMeals] = useState<boolean>(false);
+  const [showWeightTrend, setShowWeightTrend] = useState<boolean>(false);
   const [calcProfile, setCalcProfile] = useState<CalorieCalculatorProfile>(
     preferences.calculatorProfile
   );
@@ -113,6 +124,9 @@ export const Page4Calories: React.FC<Page4CaloriesProps> = ({
   const [manualKcalOverride, setManualKcalOverride] = useState<string>('');
   const [useManualKcal, setUseManualKcal] = useState<boolean>(false);
   const [savedPresetToast, setSavedPresetToast] = useState<string | null>(null);
+  const [activeQuickAddMealType, setActiveQuickAddMealType] = useState<
+    MealEntry['mealType'] | null
+  >(null);
 
   const recentDates = useMemo(() => getLastDaysISO(5), []);
 
@@ -405,25 +419,32 @@ export const Page4Calories: React.FC<Page4CaloriesProps> = ({
       <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white tracking-tight">
-            Calories &amp; Macronutrients
+            Nourishment &amp; Meal Builder
           </h1>
-          <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-1">
-            Offline BMR/TDEE target calculator, whole-food gram scaler, and auto-calculated macro meal logger
-          </p>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-1">
+            <span>Calm daily meal log &amp; simple macro balance</span>
+            <span aria-hidden="true">·</span>
+            <span className="inline-flex items-center gap-1 font-mono tabular-nums font-semibold text-sky-600 dark:text-sky-400">
+              <Flame className="w-3.5 h-3.5 shrink-0" />
+              <span>
+                {streakDays}d streak{todayActive ? ' (logged today)' : ''}
+              </span>
+            </span>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => setIsCalcExpanded((prev) => !prev)}
-            className={`min-h-[40px] px-3.5 py-1.5 text-xs font-semibold rounded-xl border transition-colors flex items-center gap-1.5 ${
+            className={`no-touch-delay min-h-[40px] px-3.5 py-1.5 text-xs font-semibold rounded-xl border transition-colors flex items-center gap-1.5 ${
               isCalcExpanded
-                ? 'bg-blue-600 text-white border-blue-600'
-                : 'hl-card text-slate-800 dark:text-slate-100 hover:border-blue-500'
+                ? 'bg-sky-600 text-white border-sky-600'
+                : 'hl-card text-slate-800 dark:text-slate-100 hover:border-sky-500'
             }`}
           >
             <Calculator className="w-3.5 h-3.5" />
-            <span>Calorie Calculator</span>
+            <span>Personalize Targets</span>
             {isCalcExpanded ? (
               <ChevronUp className="w-3.5 h-3.5" />
             ) : (
@@ -434,18 +455,18 @@ export const Page4Calories: React.FC<Page4CaloriesProps> = ({
           <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-200/80 dark:bg-slate-800/90 overflow-x-auto no-scrollbar">
             {(
               [
-                { id: NutritionPhase.LeanMass, label: 'Massing (+300)' },
-                { id: NutritionPhase.Maintenance, label: 'Maintenance' },
-                { id: NutritionPhase.MiniCut, label: 'Mini-Cut (-500)' },
+                { id: NutritionPhase.LeanMass, label: 'Build (+300)' },
+                { id: NutritionPhase.Maintenance, label: 'Maintain' },
+                { id: NutritionPhase.MiniCut, label: 'Lighter (-500)' },
               ] as const
             ).map((p) => (
               <button
                 key={p.id}
                 type="button"
                 onClick={() => handlePhaseChange(p.id)}
-                className={`min-h-[36px] px-3 py-1 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 ${
+                className={`no-touch-delay min-h-[36px] px-3 py-1 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 ${
                   goals.phase === p.id
-                    ? 'bg-slate-900 dark:bg-blue-600 text-white'
+                    ? 'bg-sky-600 text-white'
                     : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
@@ -552,9 +573,9 @@ export const Page4Calories: React.FC<Page4CaloriesProps> = ({
                     key={s.id}
                     type="button"
                     onClick={() => setCalcProfile((prev) => ({ ...prev, sex: s.id }))}
-                    className={`text-xs font-semibold rounded-lg transition-colors ${
+                    className={`no-touch-delay text-xs font-semibold rounded-lg transition-colors ${
                       calcProfile.sex === s.id
-                        ? 'bg-slate-900 dark:bg-blue-600 text-white'
+                        ? 'bg-sky-600 text-white'
                         : 'text-slate-600 dark:text-slate-300'
                     }`}
                   >
@@ -646,7 +667,7 @@ export const Page4Calories: React.FC<Page4CaloriesProps> = ({
             <button
               type="button"
               onClick={handleApplyCalculatorTargets}
-              className="min-h-[44px] px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-2 shrink-0"
+              className="no-touch-delay min-h-[44px] px-5 py-2.5 bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-2 shrink-0"
             >
               {calcAppliedBanner ? (
                 <>
@@ -673,9 +694,9 @@ export const Page4Calories: React.FC<Page4CaloriesProps> = ({
               key={d.iso}
               type="button"
               onClick={() => setSelectedDate(d.iso)}
-              className={`min-h-[54px] px-4 py-2 rounded-xl border text-left transition-colors shrink-0 ${
+              className={`no-touch-delay min-h-[54px] px-4 py-2 rounded-xl border text-left transition-colors shrink-0 ${
                 isSelected
-                  ? 'bg-slate-900 dark:bg-blue-600 text-white border-slate-900 dark:border-blue-500'
+                  ? 'bg-sky-600 text-white border-sky-600'
                   : 'hl-card text-slate-700 dark:text-slate-200 hover:border-slate-400 dark:hover:border-slate-600'
               }`}
             >
@@ -759,22 +780,22 @@ export const Page4Calories: React.FC<Page4CaloriesProps> = ({
                   label: 'Protein',
                   current: Math.round(totals.proteinG),
                   target: goals.proteinTargetG,
-                  color: 'bg-blue-600 dark:bg-blue-500',
-                  note: 'Muscle protein synthesis',
+                  color: 'bg-sky-500',
+                  note: 'Supports muscle repair',
                 },
                 {
                   label: 'Carbohydrates',
                   current: Math.round(totals.carbsG),
                   target: goals.carbsTargetG,
                   color: 'bg-emerald-500',
-                  note: 'Glycogen & MAV output',
+                  note: 'Steady training energy',
                 },
                 {
-                  label: 'Dietary Fats',
+                  label: 'Healthy Fats',
                   current: Math.round(totals.fatG),
                   target: goals.fatTargetG,
-                  color: 'bg-amber-500',
-                  note: 'Endocrine baseline',
+                  color: 'bg-teal-500',
+                  note: 'Everyday balance',
                 },
               ].map((m) => {
                 const pct = Math.min(100, Math.round((m.current / Math.max(1, m.target)) * 100));
@@ -801,185 +822,315 @@ export const Page4Calories: React.FC<Page4CaloriesProps> = ({
               })}
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-slate-200 dark:border-slate-800">
-              <label className="block">
-                <span className="text-xs font-medium text-slate-600 dark:text-slate-300">
-                  Morning Scale Weight ({goals.weightUnit})
+            <div className="pt-3 border-t border-slate-200 dark:border-slate-800 space-y-3">
+              <button
+                type="button"
+                onClick={() => setShowBodyMetrics((v) => !v)}
+                className="no-touch-delay w-full flex items-center justify-between gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
+              >
+                <span className="font-mono tabular-nums">
+                  Weight:{' '}
+                  {goals.weightUnit === 'lb'
+                    ? `${Math.round(currentRecord.bodyweightKg * 2.20462 * 10) / 10} lb`
+                    : `${currentRecord.bodyweightKg} kg`}{' '}
+                  · Steps: {currentRecord.stepsCount.toLocaleString()}
                 </span>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={
-                    goals.weightUnit === 'lb'
-                      ? Math.round(currentRecord.bodyweightKg * 2.20462 * 10) / 10
-                      : currentRecord.bodyweightKg
-                  }
-                  onChange={(e) => {
-                    const raw = Math.max(30, Number(e.target.value) || 0);
-                    const kg =
-                      goals.weightUnit === 'lb'
-                        ? Math.round((raw / 2.20462) * 10) / 10
-                        : raw;
-                    onSaveDailyNutrition({
-                      ...currentRecord,
-                      bodyweightKg: kg,
-                    });
-                  }}
-                  className="mt-1 w-full min-h-[42px] px-3 py-1.5 text-sm font-mono tabular-nums font-semibold hl-input rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600"
-                />
-              </label>
+                <span className="inline-flex items-center gap-1 text-sky-600 dark:text-sky-400">
+                  <span>{showBodyMetrics ? 'Hide' : 'Edit Weight & Steps'}</span>
+                  {showBodyMetrics ? (
+                    <ChevronUp className="w-3.5 h-3.5" />
+                  ) : (
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  )}
+                </span>
+              </button>
 
-              <label className="block">
-                <span className="text-xs font-medium text-slate-600 dark:text-slate-300">
-                  Daily Step Count
-                </span>
-                <input
-                  type="number"
-                  step="250"
-                  value={currentRecord.stepsCount}
-                  onChange={(e) =>
-                    onSaveDailyNutrition({
-                      ...currentRecord,
-                      stepsCount: Math.max(0, Number(e.target.value)),
-                    })
-                  }
-                  className="mt-1 w-full min-h-[42px] px-3 py-1.5 text-sm font-mono tabular-nums font-semibold hl-input rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600"
-                />
-              </label>
+              {showBodyMetrics && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                  <label className="block">
+                    <span className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                      Morning Scale Weight ({goals.weightUnit})
+                    </span>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={
+                        goals.weightUnit === 'lb'
+                          ? Math.round(currentRecord.bodyweightKg * 2.20462 * 10) / 10
+                          : currentRecord.bodyweightKg
+                      }
+                      onChange={(e) => {
+                        const raw = Math.max(30, Number(e.target.value) || 0);
+                        const kg =
+                          goals.weightUnit === 'lb'
+                            ? Math.round((raw / 2.20462) * 10) / 10
+                            : raw;
+                        onSaveDailyNutrition({
+                          ...currentRecord,
+                          bodyweightKg: kg,
+                        });
+                      }}
+                      className="mt-1 w-full min-h-[42px] px-3 py-1.5 text-sm font-mono tabular-nums font-semibold hl-input rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600"
+                    />
+                  </label>
+
+                  <label className="block">
+                    <span className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                      Daily Step Count
+                    </span>
+                    <input
+                      type="number"
+                      step="250"
+                      value={currentRecord.stepsCount}
+                      onChange={(e) =>
+                        onSaveDailyNutrition({
+                          ...currentRecord,
+                          stepsCount: Math.max(0, Number(e.target.value)),
+                        })
+                      }
+                      className="mt-1 w-full min-h-[42px] px-3 py-1.5 text-sm font-mono tabular-nums font-semibold hl-input rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600"
+                    />
+                  </label>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Logged Meals List */}
+          {/* Logged Meals Grouped by Meal Type + Per-Slot Quick Add */}
           <div className="hl-card rounded-2xl p-4 sm:p-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-bold text-slate-900 dark:text-white">
-                Meals Logged ({selectedDate})
-              </h2>
+            <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
+              <div>
+                <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                  Daily Meals by Meal Type ({selectedDate})
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Use Quick Add on any meal slot to log from your saved custom meals
+                </p>
+              </div>
               <span className="text-xs text-slate-500 dark:text-slate-400 font-mono tabular-nums">
                 {currentRecord.meals.length} entries
               </span>
             </div>
 
-            {currentRecord.meals.length === 0 ? (
-              <p className="text-xs text-slate-500 dark:text-slate-400 py-4">
-                No meals logged for this date yet. Build an offline meal or tap a preset.
-              </p>
-            ) : (
-              <div className="divide-y divide-slate-200/70 dark:divide-slate-800">
-                {currentRecord.meals.map((meal) => (
+            <div className="divide-y divide-slate-200/70 dark:divide-slate-800">
+              {(
+                ['Breakfast', 'Pre-Workout', 'Post-Workout', 'Dinner', 'Snack'] as Array<
+                  MealEntry['mealType']
+                >
+              ).map((slotType) => {
+                const slotMeals = currentRecord.meals.filter((m) => m.mealType === slotType);
+                const slotKcal = slotMeals.reduce((acc, m) => acc + m.calories, 0);
+                const isQuickOpen = activeQuickAddMealType === slotType;
+
+                return (
+                  <div key={slotType} className="py-3 first:pt-0 last:pb-0 space-y-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <span className="text-sm font-bold text-slate-900 dark:text-white">
+                          {slotType}
+                        </span>
+                        <span className="ml-2 text-xs font-mono tabular-nums text-slate-500 dark:text-slate-400">
+                          {slotKcal > 0 ? `${slotKcal} kcal` : '0 kcal'}
+                        </span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setActiveQuickAddMealType((prev) =>
+                            prev === slotType ? null : slotType
+                          )
+                        }
+                        className="no-touch-delay min-h-[38px] px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold transition-colors flex items-center gap-1 whitespace-nowrap shrink-0"
+                      >
+                        {isQuickOpen ? (
+                          <>
+                            <X className="w-3.5 h-3.5" />
+                            <span>Close</span>
+                          </>
+                        ) : (
+                          <>
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>Quick Add</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {isQuickOpen && (
+                      <div className="grid grid-cols-1 gap-1.5 pt-1">
+                        {savedCustomMeals.map((custom) => (
+                          <button
+                            key={custom.id}
+                            type="button"
+                            onClick={async () => {
+                              await handleQuickAddPreset({
+                                mealType: slotType,
+                                name: custom.name,
+                                calories: custom.calories,
+                                proteinG: custom.proteinG,
+                                carbsG: custom.carbsG,
+                                fatG: custom.fatG,
+                              });
+                              setActiveQuickAddMealType(null);
+                            }}
+                            className="no-touch-delay min-h-[44px] px-3 py-2 rounded-xl hl-subtle border hover:border-sky-500 text-left flex items-center justify-between gap-2 transition-colors"
+                          >
+                            <div className="min-w-0">
+                              <div className="text-xs font-semibold text-slate-900 dark:text-white truncate">
+                                {custom.name}
+                              </div>
+                              <div className="text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400">
+                                {custom.calories} kcal · {custom.proteinG}g P · {custom.carbsG}g C ·{' '}
+                                {custom.fatG}g F
+                              </div>
+                            </div>
+                            <span className="text-xs font-semibold text-sky-600 dark:text-sky-400 shrink-0">
+                              + Log
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {slotMeals.length > 0 && (
+                      <div className="space-y-1.5 pt-1">
+                        {slotMeals.map((meal) => (
+                          <div
+                            key={meal.id}
+                            className="flex items-center justify-between gap-3 pl-2 border-l border-slate-200 dark:border-slate-700"
+                          >
+                            <div className="min-w-0">
+                              <p className="text-xs font-semibold text-slate-900 dark:text-white truncate">
+                                {meal.name}{' '}
+                                <span className="font-mono font-normal text-slate-400">
+                                  ({meal.loggedAt})
+                                </span>
+                              </p>
+                              <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono tabular-nums">
+                                {meal.calories} kcal · P {meal.proteinG}g · C {meal.carbsG}g · F{' '}
+                                {meal.fatG}g
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteMeal(meal.id)}
+                              className="no-touch-delay min-h-[38px] min-w-[38px] flex items-center justify-center rounded-lg text-slate-400 hover:text-amber-700 dark:hover:text-amber-400 transition-colors shrink-0"
+                              aria-label={`Delete ${meal.name}`}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Progressive Disclosure: Saved & Starter Meal Ideas */}
+          <div className="hl-card rounded-2xl overflow-hidden">
+            <button
+              type="button"
+              data-testid="toggle-preset-meals-btn"
+              aria-expanded={showPresetMeals}
+              onClick={() => setShowPresetMeals((prev) => !prev)}
+              className="no-touch-delay w-full px-4 sm:px-5 py-4 flex items-center justify-between gap-3 text-left hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors"
+            >
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                  Saved &amp; Starter Meals
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  1-tap favorites ({savedCustomMeals.length + PRESET_HYPERTROPHY_MEALS.length} ideas)
+                </p>
+              </div>
+              <span className="inline-flex items-center gap-1 text-xs font-semibold text-sky-600 dark:text-sky-400 shrink-0">
+                <span>{showPresetMeals ? 'Hide' : 'Browse'}</span>
+                {showPresetMeals ? (
+                  <ChevronUp className="w-4 h-4" />
+                ) : (
+                  <ChevronDown className="w-4 h-4" />
+                )}
+              </span>
+            </button>
+
+            {showPresetMeals && (
+              <div className="px-4 sm:px-5 pb-4 pt-2 border-t border-slate-200/70 dark:divide-slate-800 divide-y divide-slate-200/70 dark:border-slate-800">
+                {savedCustomMeals.map((custom) => (
                   <div
-                    key={meal.id}
-                    className="py-3 first:pt-0 last:pb-0 flex items-center justify-between gap-3"
+                    key={custom.id}
+                    className="py-2.5 first:pt-0 flex items-center justify-between gap-3"
                   >
                     <div className="min-w-0">
-                      <p className="text-xs text-slate-500 dark:text-slate-400">
-                        {meal.mealType} · {meal.loggedAt}
+                      <p className="text-xs font-semibold text-slate-900 dark:text-white truncate">
+                        {custom.name}
                       </p>
-                      <p className="text-sm font-semibold text-slate-900 dark:text-white truncate mt-0.5">
-                        {meal.name}
+                      <p className="text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400">
+                        Saved · {custom.calories} kcal · {custom.proteinG}P / {custom.carbsG}C /{' '}
+                        {custom.fatG}F
                       </p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 font-mono tabular-nums mt-0.5">
-                        {meal.calories} kcal · P {meal.proteinG}g · C {meal.carbsG}g · F{' '}
-                        {meal.fatG}g
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleQuickAddPreset(custom)}
+                        className="no-touch-delay min-h-[38px] px-3 py-1.5 text-xs font-semibold text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-950/60 hover:bg-sky-100 dark:hover:bg-sky-900/60 rounded-lg transition-colors"
+                      >
+                        + Log
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteSavedPreset(custom.id)}
+                        className="no-touch-delay min-h-[38px] min-w-[38px] flex items-center justify-center rounded-lg text-slate-400 hover:text-amber-700 dark:hover:text-amber-400"
+                        aria-label={`Remove saved meal ${custom.name}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+
+                {PRESET_HYPERTROPHY_MEALS.map((preset, idx) => (
+                  <div
+                    key={idx}
+                    className="py-2.5 first:pt-0 last:pb-0 flex items-center justify-between gap-3"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-slate-900 dark:text-white truncate">
+                        {preset.name}
+                      </p>
+                      <p className="text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400">
+                        {preset.calories} kcal · {preset.proteinG}P / {preset.carbsG}C /{' '}
+                        {preset.fatG}F
                       </p>
                     </div>
                     <button
                       type="button"
-                      onClick={() => handleDeleteMeal(meal.id)}
-                      className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-lg text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors shrink-0"
-                      aria-label={`Delete ${meal.name}`}
+                      onClick={() => handleQuickAddPreset(preset)}
+                      className="no-touch-delay min-h-[38px] px-3 py-1.5 text-xs font-semibold text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-950/60 hover:bg-sky-100 dark:hover:bg-sky-900/60 rounded-lg transition-colors shrink-0"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      + Log
                     </button>
                   </div>
                 ))}
               </div>
             )}
           </div>
-
-          {/* Saved Custom Meal Presets + Built-In Hypertrophy Templates */}
-          <div className="hl-card rounded-2xl p-4 sm:p-5 space-y-4">
-            <div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                1-Tap Offline Meal Templates
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Your saved custom meals and pre-built hypertrophy meals
-              </p>
-            </div>
-
-            <div className="divide-y divide-slate-200/70 dark:divide-slate-800">
-              {savedCustomMeals.map((custom) => (
-                <div
-                  key={custom.id}
-                  className="py-2.5 first:pt-0 flex items-center justify-between gap-3"
-                >
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold text-slate-900 dark:text-white truncate">
-                      {custom.name}
-                    </p>
-                    <p className="text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400">
-                      Custom · {custom.calories} kcal · {custom.proteinG}P / {custom.carbsG}C /{' '}
-                      {custom.fatG}F
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => handleQuickAddPreset(custom)}
-                      className="min-h-[38px] px-3 py-1.5 text-xs font-semibold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 rounded-lg transition-colors"
-                    >
-                      + Log
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteSavedPreset(custom.id)}
-                      className="min-h-[38px] min-w-[38px] flex items-center justify-center rounded-lg text-slate-400 hover:text-red-600 dark:hover:text-red-400"
-                      aria-label={`Remove saved meal ${custom.name}`}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-
-              {PRESET_HYPERTROPHY_MEALS.map((preset, idx) => (
-                <div
-                  key={idx}
-                  className="py-2.5 first:pt-0 last:pb-0 flex items-center justify-between gap-3"
-                >
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold text-slate-900 dark:text-white truncate">
-                      {preset.name}
-                    </p>
-                    <p className="text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400">
-                      {preset.calories} kcal · {preset.proteinG}P / {preset.carbsG}C /{' '}
-                      {preset.fatG}F
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleQuickAddPreset(preset)}
-                    className="min-h-[38px] px-3 py-1.5 text-xs font-semibold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 rounded-lg transition-colors shrink-0"
-                  >
-                    + Log
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
         </div>
 
-        {/* Right Column: Redesigned Offline Custom Meal Builder */}
+        {/* Right Column: Simple Custom Meal Builder */}
         <div className="lg:col-span-6">
           <form onSubmit={handleAddMeal} className="hl-card rounded-2xl p-4 sm:p-6 space-y-5">
             <div className="flex items-start justify-between gap-3 pb-3 border-b border-slate-200 dark:border-slate-800">
               <div>
                 <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
-                  Offline Custom Meal Builder
+                  Build a Custom Meal
                 </h2>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Combine whole-food gram servings or type macros—calories auto-calculate live offline (4P + 4C + 9F)
+                  Pick whole foods or enter protein, carbs, and fats — calories calculate automatically
                 </p>
               </div>
             </div>
@@ -1023,84 +1174,103 @@ export const Page4Calories: React.FC<Page4CaloriesProps> = ({
               </label>
             </div>
 
-            {/* Step 1: Searchable Offline Whole-Food Library */}
+            {/* Step 1: Collapsible Offline Whole-Food Library */}
             <div className="space-y-2.5 pt-2 border-t border-slate-200 dark:border-slate-800">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">
-                  Add Offline Whole-Food Ingredients ({OFFLINE_FOOD_CATALOG.length} foods)
-                </span>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowFoodCatalog((v) => !v)}
+                  className="no-touch-delay min-h-[38px] px-3 py-1.5 rounded-xl hl-subtle border text-xs font-semibold text-slate-800 dark:text-slate-200 hover:border-slate-400 transition-colors inline-flex items-center gap-1.5"
+                >
+                  <Search className="w-3.5 h-3.5" />
+                  <span>
+                    {showFoodCatalog
+                      ? `Hide Whole-Food Catalog (${OFFLINE_FOOD_CATALOG.length})`
+                      : `Search Whole-Food Ingredients (${OFFLINE_FOOD_CATALOG.length} foods)`}
+                  </span>
+                  {showFoodCatalog ? (
+                    <ChevronUp className="w-3.5 h-3.5" />
+                  ) : (
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  )}
+                </button>
+
                 {ingredients.length > 0 && (
                   <button
                     type="button"
                     onClick={() => setIngredients([])}
-                    className="text-xs font-semibold text-slate-500 hover:text-red-600 dark:hover:text-red-400"
+                    className="no-touch-delay text-xs font-semibold text-slate-500 hover:text-amber-700 dark:hover:text-amber-400"
                   >
                     Clear Foods ({ingredients.length})
                   </button>
                 )}
               </div>
 
-              <div className="relative">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <input
-                  type="search"
-                  placeholder="Search chicken, jasmine rice, oats, eggs, whey, avocado…"
-                  value={foodSearch}
-                  onChange={(e) => setFoodSearch(e.target.value)}
-                  className="w-full min-h-[40px] pl-9 pr-3 py-1.5 text-xs hl-input rounded-xl"
-                />
-              </div>
+              {showFoodCatalog && (
+                <div className="space-y-2.5 pt-1">
+                  <div className="relative">
+                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="search"
+                      placeholder="Search chicken, jasmine rice, oats, eggs, whey, avocado…"
+                      value={foodSearch}
+                      onChange={(e) => setFoodSearch(e.target.value)}
+                      className="w-full min-h-[40px] pl-9 pr-3 py-1.5 text-xs hl-input rounded-xl"
+                    />
+                  </div>
 
-              {/* Category Filter Strip */}
-              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
-                {FOOD_CATEGORIES.map((cat) => {
-                  const active = foodCategory === cat;
-                  return (
-                    <button
-                      key={cat}
-                      type="button"
-                      onClick={() => setFoodCategory(cat)}
-                      className={`min-h-[34px] px-3 py-1 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 ${
-                        active
-                          ? 'bg-slate-900 dark:bg-blue-600 text-white'
-                          : 'hl-subtle text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-                      }`}
-                    >
-                      {cat}
-                    </button>
-                  );
-                })}
-              </div>
+                  {/* Category Filter Strip */}
+                  <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+                    {FOOD_CATEGORIES.map((cat) => {
+                      const active = foodCategory === cat;
+                      return (
+                        <button
+                          key={cat}
+                          type="button"
+                          onClick={() => setFoodCategory(cat)}
+                          className={`no-touch-delay min-h-[34px] px-3 py-1 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 ${
+                            active
+                              ? 'bg-sky-600 text-white'
+                              : 'hl-subtle text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                          }`}
+                        >
+                          {cat}
+                        </button>
+                      );
+                    })}
+                  </div>
 
-              {/* Compact Scrollable Offline Food Results */}
-              <div className="max-h-48 overflow-y-auto divide-y divide-slate-200/70 dark:divide-slate-800 rounded-xl hl-subtle border px-3">
-                {filteredFoods.slice(0, 18).map((food) => {
-                  const sampleMacros = computeFoodItemMacros(food, food.defaultServingG);
-                  return (
-                    <div
-                      key={food.id}
-                      className="py-2 flex items-center justify-between gap-2 text-xs"
-                    >
-                      <div className="min-w-0">
-                        <div className="font-semibold text-slate-900 dark:text-white truncate">
-                          {food.name}
+                  {/* Compact Scrollable Offline Food Results */}
+                  <div className="max-h-48 overflow-y-auto divide-y divide-slate-200/70 dark:divide-slate-800 rounded-xl hl-subtle border px-3">
+                    {filteredFoods.slice(0, 18).map((food) => {
+                      const sampleMacros = computeFoodItemMacros(food, food.defaultServingG);
+                      return (
+                        <div
+                          key={food.id}
+                          className="py-2 flex items-center justify-between gap-2 text-xs"
+                        >
+                          <div className="min-w-0">
+                            <div className="font-semibold text-slate-900 dark:text-white truncate">
+                              {food.name}
+                            </div>
+                            <div className="text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400">
+                              {food.servingHint} · {sampleMacros.calories} kcal ({sampleMacros.proteinG}
+                              P / {sampleMacros.carbsG}C / {sampleMacros.fatG}F)
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleAddFoodIngredient(food)}
+                            className="no-touch-delay min-h-[34px] px-2.5 py-1 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-semibold shrink-0"
+                          >
+                            + Add
+                          </button>
                         </div>
-                        <div className="text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400">
-                          {food.servingHint} · {sampleMacros.calories} kcal ({sampleMacros.proteinG}
-                          P / {sampleMacros.carbsG}C / {sampleMacros.fatG}F)
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleAddFoodIngredient(food)}
-                        className="min-h-[34px] px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold shrink-0"
-                      >
-                        + Add
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Selected Ingredients with Gram Scaler */}
@@ -1143,7 +1313,7 @@ export const Page4Calories: React.FC<Page4CaloriesProps> = ({
                           <button
                             type="button"
                             onClick={() => handleRemoveIngredient(item.uid)}
-                            className="min-h-[36px] min-w-[36px] rounded-lg flex items-center justify-center text-slate-400 hover:text-red-600 dark:hover:text-red-400"
+                            className="no-touch-delay min-h-[36px] min-w-[36px] rounded-lg flex items-center justify-center text-slate-400 hover:text-amber-700 dark:hover:text-amber-400"
                             aria-label={`Remove ${item.food.name}`}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -1252,7 +1422,7 @@ export const Page4Calories: React.FC<Page4CaloriesProps> = ({
                       setManualKcalOverride(String(composedMealTotals.autoCalories || ''));
                     }
                   }}
-                  className="text-slate-600 dark:text-slate-300 hover:underline font-medium"
+                  className="no-touch-delay text-slate-600 dark:text-slate-300 hover:underline font-medium"
                 >
                   {useManualKcal
                     ? 'Use Automatic Macro Formula (4P + 4C + 9F)'
@@ -1280,7 +1450,7 @@ export const Page4Calories: React.FC<Page4CaloriesProps> = ({
               <button
                 type="submit"
                 disabled={composedMealTotals.finalCalories <= 0}
-                className="sm:col-span-2 min-h-[44px] px-4 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs sm:text-sm font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5"
+                className="no-touch-delay sm:col-span-2 min-h-[44px] px-4 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white text-xs sm:text-sm font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5"
               >
                 <Plus className="w-4 h-4" />
                 <span>Log Meal ({composedMealTotals.finalCalories} kcal)</span>
@@ -1290,7 +1460,7 @@ export const Page4Calories: React.FC<Page4CaloriesProps> = ({
                 type="button"
                 disabled={composedMealTotals.finalCalories <= 0}
                 onClick={handleSaveAsCustomPreset}
-                className="min-h-[44px] px-3 hl-subtle border text-slate-800 dark:text-slate-200 hover:border-slate-400 disabled:opacity-50 text-xs font-semibold rounded-xl transition-colors flex items-center justify-center gap-1.5"
+                className="no-touch-delay min-h-[44px] px-3 hl-subtle border text-slate-800 dark:text-slate-200 hover:border-slate-400 disabled:opacity-50 text-xs font-semibold rounded-xl transition-colors flex items-center justify-center gap-1.5"
               >
                 <BookmarkPlus className="w-4 h-4" />
                 <span>Save Preset</span>
@@ -1298,6 +1468,57 @@ export const Page4Calories: React.FC<Page4CaloriesProps> = ({
             </div>
           </form>
         </div>
+      </div>
+
+      {/* Progressive Disclosure: Weight & Calorie Trend Chart */}
+      <div className="hl-card rounded-2xl overflow-hidden">
+        <button
+          type="button"
+          data-testid="toggle-nutrition-chart-btn"
+          aria-expanded={showWeightTrend}
+          onClick={() => setShowWeightTrend((prev) => !prev)}
+          className="no-touch-delay w-full px-4 sm:px-5 py-4 flex items-center justify-between gap-3 text-left hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors"
+        >
+          <div>
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+              Weight &amp; Calorie Trend Chart
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              Optional multi-day progress line for scale weight and energy intake
+            </p>
+          </div>
+          <span className="inline-flex items-center gap-1 text-xs font-semibold text-sky-600 dark:text-sky-400 shrink-0">
+            <span>{showWeightTrend ? 'Hide Chart' : 'View Chart'}</span>
+            {showWeightTrend ? (
+              <ChevronUp className="w-4 h-4" />
+            ) : (
+              <ChevronDown className="w-4 h-4" />
+            )}
+          </span>
+        </button>
+
+        {showWeightTrend && (
+          <div className="p-4 sm:p-5 border-t border-slate-200 dark:border-slate-800">
+            <DailyNutritionWeightChart
+              nutritionByDate={nutritionByDate}
+              nutritionGoals={goals}
+              todayIso={todayIso}
+              isDark={isDark}
+              onUpdateTodayBodyweight={async (newWeightKg) => {
+                const todayRec = nutritionByDate[todayIso] ?? {
+                  date: todayIso,
+                  bodyweightKg: newWeightKg,
+                  stepsCount: 8000,
+                  meals: [],
+                };
+                await onSaveDailyNutrition({
+                  ...todayRec,
+                  bodyweightKg: newWeightKg,
+                });
+              }}
+            />
+          </div>
+        )}
       </div>
     </div>
   );

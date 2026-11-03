@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import { SyncOutboxEvent } from '../types/workout';
 import {
   Check,
   Copy,
@@ -13,16 +12,16 @@ import {
 import {
   APK_DOWNLOAD_PATH,
   APK_FILE_NAME,
+  BUNDLE_ZIP_DOWNLOAD_PATH,
+  BUNDLE_ZIP_FILE_NAME,
   SOURCE_ZIP_DOWNLOAD_PATH,
   SOURCE_ZIP_FILE_NAME,
-  downloadAndroidSourceZip,
   downloadSignedApk,
 } from '../utils/apkDownload';
 
 interface TechnicalGuideModalProps {
   isOpen: boolean;
   onClose: () => void;
-  syncOutbox: SyncOutboxEvent[];
   onExportBackup: () => Promise<void>;
   onResetDefaults: () => Promise<void>;
 }
@@ -35,26 +34,29 @@ interface ApkManifestInfo {
   targetSdk: number;
   apkFileName: string;
   apkUrl: string;
+  bundleFileName?: string;
+  bundleUrl?: string;
   sourceZipFileName: string;
   sourceZipUrl: string;
   sizeBytes: number;
+  bundleBytes?: number;
   sourceZipBytes: number;
   sha256: string;
   builtAt: string;
 }
 
-const ADB_EMULATOR_COMMANDS = `# Option A: Drag & drop HyperLog-v2.0-universal-release.apk directly
+const ADB_EMULATOR_COMMANDS = `# Option A: Drag & drop HyperLog-v4.0-claymorphism-release.apk directly
 # onto your running Android Studio Hardware Emulator window!
 
 # Option B: Install via ADB CLI onto your USB Android Phone or Emulator
 adb devices
-adb install -r HyperLog-v2.0-universal-release.apk
+adb install -r HyperLog-v4.0-claymorphism-release.apk
 
-# Launch HyperLog directly from terminal (works 100% in Airplane Mode)
+# Launch HyperLog directly from terminal (auto-unpacks HyperLogData/{database,training,nutrition,wellness,videos} package)
 adb shell am start -n com.hyperlog.rp/com.hyperlog.rp.MainActivity`;
 
-const HEALTH_CONNECT_KOTLIN_SNIPPET = `// Compiled inside HyperLog Native APK v2.0 (HyperLogStreakWidgetProvider.kt)
-// Real-time AppWidgetManager.updateAppWidget + Dynamic RemoteViews GridLayout scaling:
+const HEALTH_CONNECT_KOTLIN_SNIPPET = `// Compiled inside HyperLog Native APK v4.0.0 (HyperLogStreakWidgetProvider.kt)
+// Per-User SharedPreferences + Dynamic RemoteViews GridLayout scaling:
 
 private fun buildResponsiveRemoteViews(
     context: Context,
@@ -74,22 +76,24 @@ private fun buildResponsiveRemoteViews(
     return buildTierRemoteViews(context, snap, resolveGridTier(options, scale), scale)
 }`;
 
-const SQLITE_SCHEMA_SNIPPET = `// On-Device Offline SQLite Database (hyperlog_offline_rp.db)
-// Zero WebView, zero cloud container — pure Native Kotlin + Android SQLiteOpenHelper
+const SQLITE_SCHEMA_SNIPPET = `// Per-User Isolated On-Device Offline SQLite Database v9 (hyperlog_user_<uid>.db)
+// Standalone Native Kotlin + Offline Video Vault + Manual Entry & Delete
 CREATE TABLE set_logs (
     id TEXT PRIMARY KEY,
     week INTEGER NOT NULL,
-    day_number INTEGER NOT NULL,
-    template_session_id TEXT,
-    exercise_id TEXT NOT NULL,
-    exercise_name TEXT NOT NULL,
-    muscle_id TEXT NOT NULL,
-    set_index INTEGER NOT NULL,
-    weight_kg REAL NOT NULL,
+    dayNumber INTEGER NOT NULL,
+    templateSessionId TEXT,
+    exerciseId TEXT NOT NULL,
+    exerciseName TEXT NOT NULL,
+    muscleId TEXT NOT NULL,
+    setIndex INTEGER NOT NULL,
+    weightKg REAL NOT NULL,
     reps INTEGER NOT NULL,
     rir REAL NOT NULL,
-    rest_seconds INTEGER NOT NULL,
-    completed INTEGER NOT NULL
+    restSeconds INTEGER NOT NULL,
+    completed INTEGER NOT NULL,
+    completedDateIso TEXT,
+    rpe REAL
 );`;
 
 function formatMegabytes(bytes: number): string {
@@ -100,7 +104,6 @@ function formatMegabytes(bytes: number): string {
 export const TechnicalGuideModal: React.FC<TechnicalGuideModalProps> = ({
   isOpen,
   onClose,
-  syncOutbox,
   onExportBackup,
   onResetDefaults,
 }) => {
@@ -109,14 +112,22 @@ export const TechnicalGuideModal: React.FC<TechnicalGuideModalProps> = ({
   const [confirmReset, setConfirmReset] = useState<boolean>(false);
   const [manifest, setManifest] = useState<ApkManifestInfo | null>(null);
   const [apkDownloadState, setApkDownloadState] = useState<'idle' | 'downloading' | 'done'>('idle');
-  const [zipDownloadState, setZipDownloadState] = useState<'idle' | 'downloading' | 'done'>('idle');
+  const [bundleDownloadState, setBundleDownloadState] = useState<'idle' | 'done'>('idle');
+  const [zipDownloadState, setZipDownloadState] = useState<'idle' | 'done'>('idle');
+  const [progressLabel, setProgressLabel] = useState<string>('');
 
   useEffect(() => {
     if (!isOpen) return;
-    fetch('/downloads/apk-manifest.json', { cache: 'no-store' })
-      .then((res) => (res.ok ? res.json() : null))
+    fetch('/api/download/manifest', { cache: 'no-store' })
+      .then((res) =>
+        res.ok
+          ? res.json()
+          : fetch('/downloads/apk-manifest.json', { cache: 'no-store' }).then((r) =>
+              r.ok ? r.json() : null
+            )
+      )
       .then((data) => {
-        if (data && data.apkUrl) setManifest(data);
+        if (data && data.apkFileName) setManifest(data);
       })
       .catch(() => {});
   }, [isOpen]);
@@ -133,27 +144,24 @@ export const TechnicalGuideModal: React.FC<TechnicalGuideModalProps> = ({
     }
   };
 
-  const apkUrl = manifest?.apkUrl ?? APK_DOWNLOAD_PATH;
-  const apkFileName = manifest?.apkFileName ?? APK_FILE_NAME;
-  const sourceZipUrl = manifest?.sourceZipUrl ?? SOURCE_ZIP_DOWNLOAD_PATH;
-  const sourceZipFileName = manifest?.sourceZipFileName ?? SOURCE_ZIP_FILE_NAME;
+  const apkUrl = `${manifest?.apkUrl || APK_DOWNLOAD_PATH}?v=4.0.0-b16`;
+  const apkFileName = manifest?.apkFileName || APK_FILE_NAME;
+  const bundleUrl = `${manifest?.bundleUrl || BUNDLE_ZIP_DOWNLOAD_PATH}?v=4.0.0-b16`;
+  const bundleFileName = manifest?.bundleFileName || BUNDLE_ZIP_FILE_NAME;
+  const sourceZipUrl = `${manifest?.sourceZipUrl || SOURCE_ZIP_DOWNLOAD_PATH}?v=4.0.0-b16`;
+  const sourceZipFileName = manifest?.sourceZipFileName || SOURCE_ZIP_FILE_NAME;
   const directApkLink =
     typeof window !== 'undefined' ? `${window.location.origin}${apkUrl}` : apkUrl;
 
-  const handleDownloadApkClick = async () => {
+  const handleVerifiedApkClick = async () => {
     if (apkDownloadState === 'downloading') return;
     setApkDownloadState('downloading');
-    await downloadSignedApk(apkUrl, apkFileName);
-    setApkDownloadState('done');
-    window.setTimeout(() => setApkDownloadState('idle'), 4000);
-  };
-
-  const handleDownloadZipClick = async () => {
-    if (zipDownloadState === 'downloading') return;
-    setZipDownloadState('downloading');
-    await downloadAndroidSourceZip(sourceZipUrl, sourceZipFileName);
-    setZipDownloadState('done');
-    window.setTimeout(() => setZipDownloadState('idle'), 3500);
+    setProgressLabel('0.00 MB');
+    const res = await downloadSignedApk(apkUrl, apkFileName, (loaded) => {
+      setProgressLabel(`${(loaded / (1024 * 1024)).toFixed(2)} MB`);
+    });
+    setApkDownloadState(res.ok ? 'done' : 'idle');
+    window.setTimeout(() => setApkDownloadState('idle'), 4500);
   };
 
   return (
@@ -180,7 +188,7 @@ export const TechnicalGuideModal: React.FC<TechnicalGuideModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="min-h-[40px] min-w-[40px] rounded-xl flex items-center justify-center text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800"
+            className="no-touch-delay min-h-[40px] min-w-[40px] rounded-xl flex items-center justify-center text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800"
             aria-label="Close APK download hub"
           >
             <X className="w-5 h-5" />
@@ -194,14 +202,14 @@ export const TechnicalGuideModal: React.FC<TechnicalGuideModalProps> = ({
               { id: 'apk', label: '1. Install on Android Phone' },
               { id: 'emulator', label: '2. ADB & Emulator Setup' },
               { id: 'fit', label: '3. Real-Time Widget & SQLite' },
-              { id: 'outbox', label: `4. Web Backup & Outbox (${syncOutbox.length})` },
+              { id: 'outbox', label: '4. Web Backup & Reset' },
             ] as const
           ).map((t) => (
             <button
               key={t.id}
               type="button"
               onClick={() => setActiveSection(t.id)}
-              className={`min-h-[38px] px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 ${
+              className={`no-touch-delay min-h-[38px] px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 ${
                 activeSection === t.id
                   ? 'bg-slate-900 dark:bg-blue-600 text-white'
                   : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
@@ -227,57 +235,93 @@ export const TechnicalGuideModal: React.FC<TechnicalGuideModalProps> = ({
                       {apkFileName}
                     </h3>
                     <p className="text-xs text-slate-300">
-                      Universal Android 8.0–15 release with automatic phone screen adaptation &amp;
-                      cutout-safe insets, dedicated Settings tab, Home Screen Progress &amp; Streak
-                      Widget, offline Mifflin-St Jeor calorie calculator, whole-food macro meal
-                      builder, vibrant crest icon, and native vibration rest timer.
+                      Unified Android 8.0–15 release (v4.0.0 · Build 16) rendering the exact same UI/UX
+                      across all 6 pages as the Web App 100% offline, bridged to Android Health Connect,
+                      live Home Screen Streak Widget, hardware haptics, and native PDF/JSON sharing.
                     </p>
                   </div>
 
                   <div className="flex flex-wrap sm:flex-col items-stretch sm:items-end gap-2 shrink-0">
-                    <button
-                      type="button"
-                      onClick={handleDownloadApkClick}
-                      disabled={apkDownloadState === 'downloading'}
-                      className="min-h-[44px] px-5 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-70 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-2 transition-colors whitespace-nowrap"
+                    <a
+                      href={`${apkUrl}&t=${Date.now()}`}
+                      download={apkFileName}
+                      onClick={(e) => {
+                        e.currentTarget.href = `${apkUrl}&t=${Date.now()}`;
+                        setApkDownloadState('done');
+                        window.setTimeout(() => setApkDownloadState('idle'), 4000);
+                      }}
+                      className="min-h-[44px] px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-2 transition-colors whitespace-nowrap"
                     >
                       {apkDownloadState === 'done' ? (
                         <>
                           <Check className="w-4 h-4" />
-                          <span>Saved .APK ({formatMegabytes(manifest?.sizeBytes ?? 1483497)})</span>
-                        </>
-                      ) : apkDownloadState === 'downloading' ? (
-                        <>
-                          <Download className="w-4 h-4 animate-bounce" />
-                          <span>Preparing .APK…</span>
+                          <span>
+                            Downloading v4.0 .APK ({formatMegabytes(manifest?.sizeBytes ?? 1410000)})
+                          </span>
                         </>
                       ) : (
                         <>
                           <Download className="w-4 h-4" />
                           <span>
-                            Download Signed .APK ({formatMegabytes(manifest?.sizeBytes ?? 1483497)})
+                            Direct Download v4.0 .APK ({formatMegabytes(manifest?.sizeBytes ?? 1410000)})
                           </span>
                         </>
                       )}
-                    </button>
+                    </a>
 
-                    <button
-                      type="button"
-                      onClick={() => copyCode('apkLink', directApkLink)}
-                      className="min-h-[38px] px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-xl flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap"
+                    <a
+                      href={`${bundleUrl}&t=${Date.now()}`}
+                      download={bundleFileName}
+                      onClick={(e) => {
+                        e.currentTarget.href = `${bundleUrl}&t=${Date.now()}`;
+                        setBundleDownloadState('done');
+                        window.setTimeout(() => setBundleDownloadState('idle'), 4000);
+                      }}
+                      className="min-h-[44px] px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap"
                     >
-                      {copiedId === 'apkLink' ? (
-                        <>
-                          <Check className="w-3.5 h-3.5 text-emerald-400" />
-                          <span>Copied Direct .APK URL</span>
-                        </>
-                      ) : (
-                        <>
-                          <Link2 className="w-3.5 h-3.5" />
-                          <span>Copy Direct .APK Link</span>
-                        </>
-                      )}
-                    </button>
+                      <FolderArchive className="w-3.5 h-3.5" />
+                      <span>
+                        {bundleDownloadState === 'done'
+                          ? 'Downloading v4.0 Phone Bundle…'
+                          : `Full Phone Bundle v4.0 .ZIP (${formatMegabytes(
+                              manifest?.bundleBytes || 1400000
+                            )})`}
+                      </span>
+                    </a>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleVerifiedApkClick}
+                        disabled={apkDownloadState === 'downloading'}
+                        className="no-touch-delay min-h-[36px] px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-xl flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>
+                          {apkDownloadState === 'downloading'
+                            ? `Verifying ${progressLabel}…`
+                            : 'Verified Blob Fallback'}
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => copyCode('apkLink', directApkLink)}
+                        className="no-touch-delay min-h-[36px] px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-xl flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap"
+                      >
+                        {copiedId === 'apkLink' ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>Copied URL</span>
+                          </>
+                        ) : (
+                          <>
+                            <Link2 className="w-3.5 h-3.5" />
+                            <span>Copy Link</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -312,7 +356,7 @@ export const TechnicalGuideModal: React.FC<TechnicalGuideModalProps> = ({
                     <button
                       type="button"
                       onClick={() => copyCode('sha', manifest.sha256)}
-                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 shrink-0"
+                      className="no-touch-delay px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 shrink-0"
                     >
                       {copiedId === 'sha' ? 'Copied' : 'Copy Hash'}
                     </button>
@@ -363,21 +407,20 @@ export const TechnicalGuideModal: React.FC<TechnicalGuideModalProps> = ({
                     Android Studio.
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleDownloadZipClick}
-                  disabled={zipDownloadState === 'downloading'}
+                <a
+                  href={sourceZipUrl}
+                  download={sourceZipFileName}
+                  onClick={() => {
+                    setZipDownloadState('done');
+                    window.setTimeout(() => setZipDownloadState('idle'), 3500);
+                  }}
                   className="min-h-[40px] px-4 py-2 hl-card hover:opacity-80 text-slate-900 dark:text-white text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-opacity shrink-0"
                 >
                   <Download className="w-3.5 h-3.5" />
                   <span>
-                    {zipDownloadState === 'done'
-                      ? 'Saved Source .ZIP'
-                      : zipDownloadState === 'downloading'
-                        ? 'Preparing .ZIP…'
-                        : 'Download Source .ZIP'}
+                    {zipDownloadState === 'done' ? 'Downloading Source .ZIP…' : 'Download Source .ZIP'}
                   </span>
-                </button>
+                </a>
               </div>
             </div>
           )}
@@ -489,10 +532,10 @@ export const TechnicalGuideModal: React.FC<TechnicalGuideModalProps> = ({
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                    Web Preview Local Backup &amp; Outbox
+                    Web Preview Local Backup &amp; Reset
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Export your web preview logs or inspect queued sync events
+                    Export your complete offline JSON backup or reset local demo data. Manage Health Connect &amp; Google Fit sync under Settings &rarr; Health Integration.
                   </p>
                 </div>
 
@@ -500,20 +543,20 @@ export const TechnicalGuideModal: React.FC<TechnicalGuideModalProps> = ({
                   <button
                     type="button"
                     onClick={onExportBackup}
-                    className="min-h-[38px] px-3 py-1.5 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-500 flex items-center gap-1.5"
+                    className="no-touch-delay min-h-[38px] px-3 py-1.5 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-500 flex items-center gap-1.5 whitespace-nowrap"
                   >
-                    <Download className="w-3.5 h-3.5" />
-                    Export JSON Backup
+                    <Download className="w-3.5 h-3.5 shrink-0" />
+                    <span>Export JSON Backup</span>
                   </button>
 
                   {!confirmReset ? (
                     <button
                       type="button"
                       onClick={() => setConfirmReset(true)}
-                      className="min-h-[38px] px-3 py-1.5 text-xs font-semibold text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950/60 hover:bg-red-100 rounded-lg flex items-center gap-1.5"
+                      className="no-touch-delay min-h-[38px] px-3 py-1.5 text-xs font-semibold text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950/60 hover:bg-red-100 rounded-lg flex items-center gap-1.5 whitespace-nowrap"
                     >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                      Reset Demo Data
+                      <RotateCcw className="w-3.5 h-3.5 shrink-0" />
+                      <span>Reset Demo Data</span>
                     </button>
                   ) : (
                     <button
@@ -522,33 +565,12 @@ export const TechnicalGuideModal: React.FC<TechnicalGuideModalProps> = ({
                         await onResetDefaults();
                         setConfirmReset(false);
                       }}
-                      className="min-h-[38px] px-3 py-1.5 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-lg"
+                      className="no-touch-delay min-h-[38px] px-3 py-1.5 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-lg whitespace-nowrap"
                     >
                       Confirm Reset
                     </button>
                   )}
                 </div>
-              </div>
-
-              <div className="space-y-2.5">
-                {syncOutbox.map((ev) => (
-                  <div
-                    key={ev.id}
-                    className="p-3.5 rounded-xl hl-subtle border space-y-1.5"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                      <span className="font-bold text-slate-900 dark:text-white">
-                        {ev.recordType} · {ev.healthConnectType}
-                      </span>
-                      <span className="font-mono text-[11px] text-slate-500 dark:text-slate-400">
-                        {ev.googleFitDataSource}
-                      </span>
-                    </div>
-                    <pre className="p-2.5 hl-card rounded-lg text-[11px] font-mono text-slate-700 dark:text-slate-300 overflow-x-auto">
-                      {JSON.stringify(ev.payload, null, 2)}
-                    </pre>
-                  </div>
-                ))}
               </div>
             </div>
           )}

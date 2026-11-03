@@ -1,20 +1,31 @@
+// ============================================================================
+// HyperLog Android Build Recipe (build.gradle.kts)
+// Think of this file like the instruction manual that tells Android Studio &
+// Gradle how to bake our Kotlin code into a signed, installable .APK file!
+// ============================================================================
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
 
 android {
+    // Unique package address on Android phones (used by Google Play & Health Connect)
     namespace = "com.hyperlog.rp"
     compileSdk = 35
 
     defaultConfig {
         applicationId = "com.hyperlog.rp"
+        // minSdk 26 = Android 8.0+ (works on 98%+ of active Android phones)
         minSdk = 26
+        // targetSdk 35 = Android 15 (latest security & edge-to-edge display rules)
         targetSdk = 35
-        versionCode = 2
-        versionName = "2.0.0"
+        // Increment versionCode every time we build a new release APK
+        versionCode = 16
+        versionName = "4.0.0"
     }
 
+    // Digital wax seal: Android refuses to install an APK unless it is cryptographically signed.
+    // Enabling V1 (JAR), V2 (Full APK), and V3 (Key Rotation) ensures smooth installation on all phones.
     signingConfigs {
         create("release") {
             storeFile = rootProject.file("keystore/mesotrack-release.jks")
@@ -34,6 +45,7 @@ android {
         }
     }
 
+    // Compile using modern Java 17 bytecode for fast execution on Android ART
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -45,5 +57,8 @@ android {
 }
 
 dependencies {
-    // 100% Standalone Zero-Bloat Native Kotlin + Android SQLite + Skia Canvas
+    // Zero external library bloat! HyperLog uses 100% built-in Android SDK APIs:
+    // SQLiteOpenHelper (database), Skia Canvas (charts & anatomy map), AudioTrack (PCM breath audio),
+    // PdfDocument (workout PDFs), and AppWidgetProvider (Home Screen streak widget).
 }
+

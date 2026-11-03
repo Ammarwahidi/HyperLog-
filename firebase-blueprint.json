@@ -1,0 +1,457 @@
+{
+  "entities": {
+    "AdminRecord": {
+      "title": "AdminRecord",
+      "description": "Trusted administrator membership record used for server-side RBAC lookups.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID of the administrator."
+        },
+        "grantedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when admin access was granted."
+        }
+      },
+      "required": ["uid", "grantedAt"]
+    },
+    "UserPublicProfile": {
+      "title": "UserPublicProfile",
+      "description": "Non-PII account profile and security state for an isolated user.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Immutable Firebase Auth UID owning this account."
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Sanitized display name without PII."
+        },
+        "authProvider": {
+          "type": "string",
+          "enum": ["password", "google.com", "facebook.com"],
+          "maxLength": 32,
+          "description": "Primary authentication provider identifier."
+        },
+        "mfaEnabled": {
+          "type": "boolean",
+          "description": "Whether TOTP multi-factor authentication is active on this account."
+        },
+        "accountStatus": {
+          "type": "string",
+          "enum": ["active", "deleted"],
+          "maxLength": 16,
+          "description": "Lifecycle status; terminal when set to deleted."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Immutable server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server modification timestamp."
+        }
+      },
+      "required": [
+        "uid",
+        "displayName",
+        "authProvider",
+        "mfaEnabled",
+        "accountStatus",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "UserEncryptedPii": {
+      "title": "UserEncryptedPii",
+      "description": "Split-collection isolated vault storing AES-256-GCM encrypted PII and TOTP MFA secrets.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Owner UID matching parent user document."
+        },
+        "encryptedEmailCipher": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "description": "AES-256-GCM ciphertext of user email address."
+        },
+        "encryptedPhoneCipher": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 1024,
+          "description": "AES-256-GCM ciphertext of optional recovery phone or personal note."
+        },
+        "encryptedTotpSecretCipher": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 1024,
+          "description": "AES-256-GCM ciphertext of RFC 6238 TOTP secret."
+        },
+        "mfaMethod": {
+          "type": "string",
+          "enum": ["none", "totp"],
+          "maxLength": 16,
+          "description": "Configured multi-factor method."
+        },
+        "recoveryCodesHash": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 512,
+          "description": "SHA-256 digest summary of backup recovery codes."
+        },
+        "encryptionAlgo": {
+          "type": "string",
+          "enum": ["AES-256-GCM-PBKDF2"],
+          "maxLength": 32,
+          "description": "Encryption algorithm identifier."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Immutable server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server modification timestamp."
+        }
+      },
+      "required": [
+        "uid",
+        "encryptedEmailCipher",
+        "encryptedPhoneCipher",
+        "encryptedTotpSecretCipher",
+        "mfaMethod",
+        "recoveryCodesHash",
+        "encryptionAlgo",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "UserPrivacyConsent": {
+      "title": "UserPrivacyConsent",
+      "description": "GDPR and CCPA privacy policy acceptance and data governance preferences.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Owner UID."
+        },
+        "policyVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "description": "Accepted privacy policy semantic version."
+        },
+        "essentialStorage": {
+          "type": "boolean",
+          "description": "Required storage consent for core authentication and workout logs."
+        },
+        "cloudSyncConsent": {
+          "type": "boolean",
+          "description": "Consent to replicate encrypted fitness and nutrition logs to cloud vault."
+        },
+        "analyticsConsent": {
+          "type": "boolean",
+          "description": "Opt-in consent for anonymous product diagnostics."
+        },
+        "marketingConsent": {
+          "type": "boolean",
+          "description": "Opt-in consent for training tips or product updates."
+        },
+        "doNotSellMyInfo": {
+          "type": "boolean",
+          "description": "CCPA Do Not Sell or Share Personal Information flag."
+        },
+        "auditRetentionDays": {
+          "type": "number",
+          "description": "Retention window in days for security audit logs (30 to 365)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Immutable server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server modification timestamp."
+        }
+      },
+      "required": [
+        "uid",
+        "policyVersion",
+        "essentialStorage",
+        "cloudSyncConsent",
+        "analyticsConsent",
+        "marketingConsent",
+        "doNotSellMyInfo",
+        "auditRetentionDays",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "UserIsolatedVaultChunk": {
+      "title": "UserIsolatedVaultChunk",
+      "description": "Isolated per-user encrypted snapshot of workouts, nutrition, and wellbeing state.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Owner UID."
+        },
+        "chunkType": {
+          "type": "string",
+          "enum": ["nutrition_wellbeing", "workouts_sets", "goals_preferences"],
+          "maxLength": 32,
+          "description": "Domain partition of the user vault."
+        },
+        "encryptedPayloadCipher": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 450000,
+          "description": "AES-256-GCM encrypted payload for this user partition."
+        },
+        "recordCount": {
+          "type": "number",
+          "description": "Count of records stored inside this vault partition."
+        },
+        "checksum": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Integrity digest of the unencrypted snapshot."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Immutable server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server modification timestamp."
+        }
+      },
+      "required": [
+        "uid",
+        "chunkType",
+        "encryptedPayloadCipher",
+        "recordCount",
+        "checksum",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "ComplianceAuditLog": {
+      "title": "ComplianceAuditLog",
+      "description": "Immutable GDPR/CCPA compliance audit log tracking user data access and security events.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Target user UID whose data or session was accessed."
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Deterministic audit event identifier."
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "AUTH_REGISTER",
+            "AUTH_LOGIN",
+            "AUTH_LOGOUT",
+            "AUTH_PASSWORD_RESET_REQUEST",
+            "AUTH_EMAIL_VERIFICATION_SENT",
+            "MFA_ENABLED",
+            "MFA_DISABLED",
+            "MFA_VERIFIED",
+            "PRIVACY_CONSENT_UPDATED",
+            "DATA_EXPORT_GDPR",
+            "VAULT_SYNC_WRITE",
+            "VAULT_SYNC_READ",
+            "PROFILE_UPDATED",
+            "ACCOUNT_ERASURE_REQUESTED",
+            "FEEDBACK_SUBMITTED"
+          ],
+          "maxLength": 48,
+          "description": "Standardized security or compliance event code."
+        },
+        "category": {
+          "type": "string",
+          "enum": ["authentication", "mfa", "privacy", "data_access", "erasure"],
+          "maxLength": 32,
+          "description": "Compliance audit category."
+        },
+        "actorUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Authenticated UID performing the action."
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 280,
+          "description": "Human-readable audit event description without raw secrets."
+        },
+        "ipHint": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "Redacted client origin or session fingerprint."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of the audit event."
+        }
+      },
+      "required": [
+        "uid",
+        "eventId",
+        "action",
+        "category",
+        "actorUid",
+        "summary",
+        "ipHint",
+        "createdAt"
+      ]
+    },
+    "UserBetaFeedback": {
+      "title": "UserBetaFeedback",
+      "description": "Post-testing user feedback, device diagnostic summary, and bug report record.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Authenticated user UID submitting the feedback."
+        },
+        "feedbackId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Deterministic feedback document identifier."
+        },
+        "rating": {
+          "type": "number",
+          "description": "User satisfaction rating from 1 to 5 stars."
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "Workout Tracker",
+            "Forearms & Grip",
+            "Breathing Audio",
+            "Indian Recipes",
+            "UI Simplicity",
+            "Android APK Install",
+            "Bug Report",
+            "Feature Request"
+          ],
+          "maxLength": 40,
+          "description": "Feedback or issue triage category."
+        },
+        "message": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 1200,
+          "description": "User feedback notes or reproduction steps."
+        },
+        "deviceInfo": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240,
+          "description": "Sanitized viewport, OS, and build diagnostic label."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["open", "triaged", "resolved"],
+          "maxLength": 20,
+          "description": "Post-testing triage status."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Immutable server creation timestamp."
+        }
+      },
+      "required": [
+        "uid",
+        "feedbackId",
+        "rating",
+        "category",
+        "message",
+        "deviceInfo",
+        "status",
+        "createdAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/admins/{adminId}": {
+      "schema": "AdminRecord",
+      "description": "Trusted administrator directory for compliance auditing."
+    },
+    "/users/{userId}": {
+      "schema": "UserPublicProfile",
+      "description": "Isolated non-PII user account profile root."
+    },
+    "/users/{userId}/private/{docId}": {
+      "schema": "UserEncryptedPii",
+      "description": "Split-collection encrypted PII and TOTP MFA secret vault."
+    },
+    "/users/{userId}/privacy/{docId}": {
+      "schema": "UserPrivacyConsent",
+      "description": "GDPR and CCPA consent and retention preferences."
+    },
+    "/users/{userId}/vault/{docId}": {
+      "schema": "UserIsolatedVaultChunk",
+      "description": "Isolated per-user encrypted fitness and nutrition data partitions."
+    },
+    "/users/{userId}/auditLogs/{logId}": {
+      "schema": "ComplianceAuditLog",
+      "description": "Immutable per-user GDPR/CCPA access and security audit logs."
+    },
+    "/users/{userId}/feedback/{feedbackId}": {
+      "schema": "UserBetaFeedback",
+      "description": "Isolated per-user post-testing feedback and bug triage reports."
+    }
+  }
+}

@@ -5,6 +5,18 @@ import org.json.JSONObject
 import java.time.LocalDate
 import kotlin.math.roundToInt
 
+/**
+ * ============================================================================
+ * ModelsAndSeed.kt — The Data Blueprints & Starter Catalog of HyperLog
+ *
+ * Beginner Guide to Fitness Words Used in This File:
+ * - MV  (Maintenance Volume): Minimum weekly sets needed so you don't lose muscle.
+ * - MEV (Minimum Effective Volume): Weekly sets where new muscle growth begins!
+ * - MAV (Maximum Adaptive Volume): The "sweet spot" of weekly sets for best results.
+ * - MRV (Maximum Recoverable Volume): The ceiling — more sets than this can make you too tired.
+ * - RIR (Reps in Reserve): How many more reps you *could* have done before stopping (e.g., 2 RIR = 2 reps left in the tank).
+ * ============================================================================
+ */
 enum class MajorMuscleGroup(val label: String, val summary: String) {
     ALL("All Muscles", "Full 13-region anterior & posterior hypertrophy map"),
     CHEST("Chest", "Clavicular & sternal pectoralis major pressing & adduction"),
@@ -95,13 +107,25 @@ fun evaluateVolumeZone(sets: Int, lm: MuscleLandmark): VolumeZone {
 }
 
 enum class AppThemeMode(val id: String, val label: String, val shortTag: String, val subtitle: String, val isDark: Boolean) {
+    CLAYMORPHISM("clay", "Soft Clay 3D", "Clay", "Plump 3D pastel clay cards with smooth glass-like specular bevels", false),
+    CLAY_DARK("clay_dark", "Midnight Clay 3D", "Clay Dark", "Deep indigo matte clay with luminous 3D inner rims", true),
     DAYLIGHT("light", "Daylight", "Light", "Crisp high-contrast slate for bright gyms", false),
+    FROST_GLASS("glass", "Pastel Glass", "Glass", "Soft pastel backdrop with frosted glass cards", false),
     NIGHT_SLATE("dark", "Night Slate", "Night", "Deep cobalt dark mode for evening sessions", true),
     AMOLED("amoled", "True AMOLED", "AMOLED", "Pure #000000 black for OLED battery savings", true),
     GRAPHITE("graphite", "Graphite Dark", "Graphite", "Neutral charcoal iron aesthetic", true);
 
     companion object {
-        fun fromId(id: String?): AppThemeMode = entries.firstOrNull { it.id == id } ?: DAYLIGHT
+        fun fromId(id: String?): AppThemeMode {
+            val norm = id?.trim()?.lowercase() ?: return CLAYMORPHISM
+            if (norm == "glass" || norm == "pastel-glass" || norm == "pistel-glass" || norm == "frost_glass") {
+                return FROST_GLASS
+            }
+            if (norm == "clay-dark" || norm == "clay_dark") {
+                return CLAY_DARK
+            }
+            return entries.firstOrNull { it.id == norm } ?: CLAYMORPHISM
+        }
     }
 }
 
@@ -177,7 +201,27 @@ data class SetLog(
     val reps: Int,
     val rir: Double,
     val restSeconds: Int,
-    val completed: Boolean
+    val completed: Boolean,
+    val completedDateIso: String? = null,
+    val rpe: Double? = null
+)
+
+data class WorkoutDayNote(
+    val dateIso: String,
+    val title: String,
+    val durationMinutes: Int,
+    val notes: String
+)
+
+data class ExerciseSessionPoint(
+    val dateIso: String,
+    val shortLabel: String,
+    val topWeightKg: Double,
+    val avgWeightKg: Double,
+    val est1RmKg: Double,
+    val totalSets: Int,
+    val bestReps: Int,
+    val avgRpe: Double?
 )
 
 data class MuscleFeedback(
@@ -273,7 +317,80 @@ data class LibraryExercise(
 
     fun secondaryList(): List<String> =
         secondaryMusclesCsv.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+
+    val isCustom: Boolean
+        get() = id.startsWith("lib_custom_")
+
+    fun inferModality(): String {
+        val eq = equipment.trim().lowercase()
+        val grp = majorGroup.trim().lowercase()
+        return when {
+            eq == "yoga" || grp == "yoga" -> "Yoga"
+            eq == "stretching" || grp == "stretching" -> "Stretching"
+            eq == "cardio" || grp == "cardio" || primaryMuscle == "cardio" -> "Cardio"
+            else -> "Strength"
+        }
+    }
+
+    fun inferLevel(): String {
+        val eq = equipment.trim().lowercase()
+        val nm = name.trim().lowercase()
+        return when {
+            nm.contains("weighted") || nm.contains("deficit") || nm.contains("snatch") || nm.contains("clean") || nm.contains("pistol") -> "Advanced"
+            eq in setOf("machine", "bodyweight", "stretching", "yoga", "bands", "cardio") -> "Beginner"
+            else -> "Intermediate"
+        }
+    }
 }
+
+data class UserAccountProfile(
+    val uid: String,
+    val displayName: String,
+    val email: String,
+    val provider: String, // "Guest", "Email", "Google", "Facebook"
+    val dbFileName: String
+)
+
+data class OfflineDemoVideoEntry(
+    val exerciseId: String,
+    val exerciseName: String,
+    val primaryMuscle: String,
+    val majorGroup: String,
+    val equipment: String,
+    val modality: String,
+    val motionPattern: String,
+    val localFilePath: String,
+    val fileSizeBytes: Long,
+    val durationSec: Int,
+    val coachingStepsJson: String,
+    val videoUrl: String,
+    val downloadedAtEpochMs: Long,
+    val downloadedAtIso: String
+) {
+    fun coachingSteps(): List<String> {
+        if (coachingStepsJson.isBlank()) return emptyList()
+        return try {
+            val arr = JSONArray(coachingStepsJson)
+            (0 until arr.length()).mapNotNull { idx -> arr.optString(idx, "").trim().takeIf { it.isNotEmpty() } }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+}
+
+data class WorkoutHistoryAnalytics(
+    val currentWorkoutStreakDays: Int,
+    val bestWorkoutStreakDays: Int,
+    val totalWorkoutsAllTime: Int,
+    val workoutsLast7Days: Int,
+    val workoutsLast30Days: Int,
+    val avgWorkoutsPerWeek: Double,
+    val totalDurationMinutes: Int,
+    val avgDurationMinutes: Int,
+    val totalSetsAllTime: Int,
+    val totalTonnageKg: Double,
+    val last14DaysConsistency: List<Triple<String, String, Boolean>> // (dateIso, dayLabel, hasWorkout)
+)
 
 data class MealLog(
     val id: String,
@@ -307,12 +424,84 @@ data class DailyMetrics(
     val proteinPerKg: Double
 )
 
+data class WellbeingDailyRecord(
+    val dateIso: String,
+    val waterMl: Int,
+    val sleepHours: Double,
+    val energyScore: Int,
+    val stressScore: Int,
+    val sorenessScore: Int,
+    val breathMinutes: Int,
+    val mobilityMinutes: Int,
+    val notes: String
+) {
+    fun readinessScore(): Int {
+        val sleepNorm = ((sleepHours.coerceIn(4.0, 9.0) - 4.0) / 5.0) * 35.0
+        val energyNorm = (energyScore.coerceIn(1, 5) / 5.0) * 25.0
+        val stressNorm = ((6 - stressScore.coerceIn(1, 5)) / 5.0) * 20.0
+        val soreNorm = ((6 - sorenessScore.coerceIn(1, 5)) / 5.0) * 20.0
+        return (sleepNorm + energyNorm + stressNorm + soreNorm).roundToInt().coerceIn(15, 100)
+    }
+}
+
+data class HealthConnectSyncRecord(
+    val id: String,
+    val syncedAtEpochMs: Long,
+    val summary: String,
+    val setsCount: Int,
+    val tonnageKg: Double,
+    val status: String
+)
+
+data class GuidedFlowStep(
+    val name: String,
+    val durationSec: Int,
+    val cue: String,
+    val primaryMuscle: String
+)
+
+data class GuidedFlowRoutine(
+    val id: String,
+    val title: String,
+    val modality: String, // "Yoga", "Stretching", "Cardio"
+    val durationMin: Int,
+    val summary: String,
+    val steps: List<GuidedFlowStep>
+)
+
 data class StandaloneSession(
     val sessionId: String,
     val templateId: String,
     val templateName: String,
     val exercises: List<TemplateExerciseItem>
 )
+
+fun serializeStandaloneSession(session: StandaloneSession?): String {
+    if (session == null) return ""
+    return JSONObject().apply {
+        put("sessionId", session.sessionId)
+        put("templateId", session.templateId)
+        put("templateName", session.templateName)
+        put("exercisesJson", serializeTemplateItems(session.exercises))
+    }.toString()
+}
+
+fun parseStandaloneSession(raw: String?): StandaloneSession? {
+    if (raw.isNullOrBlank()) return null
+    return try {
+        val o = JSONObject(raw)
+        val sid = o.optString("sessionId", "")
+        if (sid.isBlank()) return null
+        StandaloneSession(
+            sessionId = sid,
+            templateId = o.optString("templateId", "custom"),
+            templateName = o.optString("templateName", "Custom Workout"),
+            exercises = parseTemplateItems(o.optString("exercisesJson", "[]"))
+        )
+    } catch (_: Exception) {
+        null
+    }
+}
 
 // ============================================================================
 // 100% OFFLINE MIFFLIN-ST JEOR CALORIE & MACRO CALCULATOR
@@ -483,6 +672,93 @@ data class WidgetProgressSnapshot(
     val targetProteinG: Int
 )
 
+data class IndianRecipe(
+    val id: String,
+    val name: String,
+    val region: String,
+    val dietaryTag: String, // Primary tag: "Vegetarian", "High-Protein Veg", "Vegan", "Eggetarian", "Non-Vegetarian"
+    val mealType: String,
+    val prepMinutes: Int,
+    val cookMinutes: Int,
+    val calories: Int,
+    val proteinG: Int,
+    val carbsG: Int,
+    val fatG: Int,
+    val summary: String,
+    val ingredients: List<String>,
+    val steps: List<String>,
+    val dietaryTags: List<String> = listOf(dietaryTag),
+    val cookingStyle: String = "",
+    val videoUrl: String = ""
+) {
+    fun matchesDietFilter(filter: String): Boolean {
+        if (filter.isBlank() || filter.equals("All", ignoreCase = true)) return true
+        if (filter.equals("Vegetarian", ignoreCase = true)) {
+            val vegSet = setOf("vegetarian", "high-protein veg", "vegan")
+            return dietaryTag.lowercase() in vegSet || dietaryTags.any { it.lowercase() in vegSet }
+        }
+        return dietaryTag.equals(filter, ignoreCase = true) ||
+            dietaryTags.any { it.equals(filter, ignoreCase = true) }
+    }
+
+    fun resolvedCookingStyle(): String {
+        if (cookingStyle.isNotBlank()) return cookingStyle
+        val n = name.lowercase()
+        val r = region.lowercase()
+        return when {
+            "tikka" in n || "tandoor" in n -> "Tandoori & Air-Fryer Chargrill"
+            "pesarattu" in n || "dosa" in n || "idli" in n || "south" in r -> "South Indian Fermented & Tawa Batter"
+            "dal" in n || "rajma" in n || "chana" in n || "chole" in n -> "North Indian Double-Tadka Legumes"
+            "palak" in n || "bhakri" in n || "millet" in n || "thepla" in n -> "Iron-Skillet Greens & Millet Flatbreads"
+            "bhurji" in n || "egg" in n || "chaat" in n || "sprout" in n -> "Mumbai Tawa Bhurji & Street Chaat"
+            "keema" in n || "chicken" in n -> "Slow-Simmered Bhuna Masala"
+            "fish" in n || "prawn" in n || "coastal" in r -> "Coastal Curry-Leaf & Kokum Simmer"
+            else -> "Homestyle Indian Macro Prep"
+        }
+    }
+
+    fun resolvedVideoUrl(): String {
+        if (videoUrl.isNotBlank()) return videoUrl
+        val n = name.lowercase()
+        return when {
+            "paneer tikka" in n -> "https://www.youtube.com/results?search_query=high+protein+paneer+tikka+air+fryer+tandoori+recipe"
+            "chicken tikka" in n -> "https://www.youtube.com/results?search_query=high+protein+tandoori+chicken+tikka+breast+indian+recipe"
+            "pesarattu" in n -> "https://www.youtube.com/results?search_query=crispy+green+moong+dal+pesarattu+dosa+south+indian+recipe"
+            "dal" in n -> "https://www.youtube.com/results?search_query=dhaba+style+double+tadka+dal+high+protein+indian+recipe"
+            "rajma" in n || "chole" in n || "chana" in n -> "https://www.youtube.com/results?search_query=punjabi+masala+rajma+chole+healthy+indian+recipe"
+            "palak" in n -> "https://www.youtube.com/results?search_query=authentic+lasooni+palak+paneer+tofu+indian+recipe"
+            "bhurji" in n || "egg" in n -> "https://www.youtube.com/results?search_query=mumbai+street+style+masala+egg+bhurji+tawa+recipe"
+            "fish" in n -> "https://www.youtube.com/results?search_query=kerala+goan+coastal+fish+curry+authentic+indian+recipe"
+            "soya" in n || "keema" in n -> "https://www.youtube.com/results?search_query=high+protein+soya+keema+matar+bhuna+masala+recipe"
+            else -> {
+                val query = java.net.URLEncoder.encode("$name authentic healthy Indian recipe video", "UTF-8")
+                "https://www.youtube.com/results?search_query=$query"
+            }
+        }
+    }
+}
+
+data class BreathingAudioTrackInfo(
+    val id: String,
+    val title: String,
+    val subtitle: String,
+    val baseFreqHz: Double
+)
+
+/**
+ * Stores a post-testing feedback report or bug note written by a user on their phone.
+ * Saved offline in SQLite (`user_feedback` table) AND mirrored to `HyperLogData/feedback/tester_feedback.json`.
+ */
+data class UserFeedbackEntry(
+    val id: String,
+    val rating: Int,
+    val category: String,
+    val message: String,
+    val deviceInfo: String,
+    val createdAtEpochMs: Long,
+    val createdAtIso: String
+)
+
 object SeedCatalog {
     fun offlineFoods(): List<OfflineFoodItem> = listOf(
         // Proteins
@@ -536,7 +812,31 @@ object SeedCatalog {
         OfflineFoodItem("fd_dates", "Medjool Dates (Pre-Workout)", "Fruit & Veg", 48, "2 dates (48g)", 0.9, 36.0, 0.1),
         OfflineFoodItem("fd_broccoli", "Steamed Broccoli Florets", "Fruit & Veg", 150, "150g greens", 4.2, 10.5, 0.5),
         OfflineFoodItem("fd_spinach", "Baby Spinach / Mixed Greens", "Fruit & Veg", 100, "100g greens", 2.9, 3.6, 0.4),
-        OfflineFoodItem("fd_asparagus", "Grilled Asparagus", "Fruit & Veg", 150, "150g spears", 3.6, 6.0, 0.3)
+        OfflineFoodItem("fd_asparagus", "Grilled Asparagus", "Fruit & Veg", 150, "150g spears", 3.6, 6.0, 0.3),
+
+        // Authentic Indian Foods & High-Protein Staples
+        OfflineFoodItem("fd_ind_paneer_lowfat", "Low-Fat Malai Paneer", "Indian Foods", 100, "100g cubes", 22.0, 4.0, 8.5),
+        OfflineFoodItem("fd_ind_soya_chunks", "Soya Chunks / Nutrela (Dry Wt)", "Indian Foods", 50, "50g dry (150g boiled)", 26.0, 16.5, 0.5),
+        OfflineFoodItem("fd_ind_tandoori_chicken", "Tandoori Chicken Breast Tikka", "Indian Foods", 150, "150g roasted", 43.0, 3.5, 5.5),
+        OfflineFoodItem("fd_ind_moong_dal", "Yellow Moong Dal Tadka", "Indian Foods", 200, "1 katori (200g)", 14.5, 30.0, 4.2),
+        OfflineFoodItem("fd_ind_rajma", "Homestyle Rajma Masala", "Indian Foods", 200, "1 katori (200g)", 13.5, 34.0, 5.0),
+        OfflineFoodItem("fd_ind_chana_masala", "Punjabi Chole / Chana Masala", "Indian Foods", 200, "1 katori (200g)", 14.0, 36.0, 6.0),
+        OfflineFoodItem("fd_ind_kala_chana", "Boiled Kala Chana Chaat", "Indian Foods", 150, "150g bowl", 13.0, 29.0, 2.8),
+        OfflineFoodItem("fd_ind_roti_phulka", "Whole Wheat Phulka / Chapati", "Indian Foods", 70, "2 phulkas (70g)", 6.4, 34.0, 1.4),
+        OfflineFoodItem("fd_ind_ragi_roti", "Ragi / Bajra Millet Bhakri", "Indian Foods", 80, "2 rotis (80g)", 5.8, 36.0, 1.8),
+        OfflineFoodItem("fd_ind_basmati_rice", "Steamed Aged Basmati Rice", "Indian Foods", 150, "150g cooked", 4.2, 41.0, 0.5),
+        OfflineFoodItem("fd_ind_poha", "Kanda Batata Poha with Peanuts", "Indian Foods", 180, "1 plate (180g)", 5.8, 38.0, 6.5),
+        OfflineFoodItem("fd_ind_upma", "Vegetable Rava & Oats Upma", "Indian Foods", 180, "1 bowl (180g)", 6.5, 34.0, 5.5),
+        OfflineFoodItem("fd_ind_idli", "Steamed Rice & Urad Dal Idli", "Indian Foods", 150, "3 idlis (150g)", 6.6, 39.0, 0.9),
+        OfflineFoodItem("fd_ind_ragi_dosa", "Crispy Ragi & Urad Protein Dosa", "Indian Foods", 110, "1 dosa (110g)", 6.2, 29.0, 3.5),
+        OfflineFoodItem("fd_ind_besan_chilla", "Spiced Besan Veggie Chilla", "Indian Foods", 140, "2 chillas (140g)", 13.5, 28.0, 6.0),
+        OfflineFoodItem("fd_ind_moong_chilla", "Green Moong Dal Paneer Chilla", "Indian Foods", 160, "2 chillas (160g)", 18.5, 26.0, 5.5),
+        OfflineFoodItem("fd_ind_egg_bhurji", "Masala Egg Bhurji (2 Whole + 2 Whites)", "Indian Foods", 170, "170g scramble", 21.0, 4.5, 11.0),
+        OfflineFoodItem("fd_ind_dahi", "Thick Ghar Ka Dahi (Low-Fat Curd)", "Indian Foods", 200, "1 bowl (200g)", 10.5, 9.0, 3.0),
+        OfflineFoodItem("fd_ind_chaas", "Jeera Masala Chaas (Buttermilk)", "Indian Foods", 250, "1 glass (250ml)", 5.2, 4.8, 1.5),
+        OfflineFoodItem("fd_ind_makhana", "Dry-Roasted Spiced Makhana", "Indian Foods", 30, "30g bowl", 3.2, 22.0, 1.2),
+        OfflineFoodItem("fd_ind_roasted_chana", "Crunchy Bhuna Chana", "Indian Foods", 45, "45g handful", 9.5, 25.0, 2.2),
+        OfflineFoodItem("fd_ind_ghee", "Pure Desi Cow Ghee", "Indian Foods", 5, "1 tsp (5g)", 0.0, 0.0, 5.0)
     )
 
     fun defaultLandmarks(): List<MuscleLandmark> = listOf(
@@ -623,11 +923,18 @@ object SeedCatalog {
     )
 
     fun defaultWeek3BaselineSetLogs(exercises: List<DayExercise>): List<SetLog> {
+        val today = LocalDate.now()
         val list = mutableListOf<SetLog>()
         for (ex in exercises) {
             val targetSets = ex.w3Sets
             val defaultReps = Regex("\\d+").find(ex.repRange)?.value?.toIntOrNull() ?: 10
-            val isCompleted = ex.dayNumber in setOf(1, 2, 4)
+            val completedDate = when (ex.dayNumber) {
+                1 -> today.minusDays(3).toString()
+                2 -> today.minusDays(2).toString()
+                4 -> today.minusDays(1).toString()
+                else -> null
+            }
+            val isCompleted = completedDate != null
             for (s in 1..targetSets) {
                 list.add(
                     SetLog(
@@ -643,9 +950,74 @@ object SeedCatalog {
                         reps = defaultReps,
                         rir = 1.0,
                         restSeconds = ex.restSeconds,
-                        completed = isCompleted
+                        completed = isCompleted,
+                        completedDateIso = completedDate,
+                        rpe = if (isCompleted) (8.5 + (if (s == targetSets) 0.5 else 0.0)).coerceAtMost(10.0) else null
                     )
                 )
+            }
+        }
+        return list
+    }
+
+    fun defaultHistoricalProgressionSetLogs(exercises: List<DayExercise>): List<SetLog> {
+        val today = LocalDate.now()
+        val list = mutableListOf<SetLog>()
+
+        // Seed 6 prior microcycles across the past 42 days so Calendar & 10-Session Progression Charts have rich history
+        data class HistBlock(val tag: String, val weekNum: Int, val daysAgoBase: Long, val loadScale: Double, val rirVal: Double, val baseRpe: Double)
+        val blocks = listOf(
+            HistBlock("hist_b1_w1", 1, 42L, 0.84, 3.0, 7.0),
+            HistBlock("hist_b1_w2", 2, 35L, 0.87, 2.5, 7.5),
+            HistBlock("hist_b1_w3", 3, 28L, 0.90, 2.0, 8.0),
+            HistBlock("hist_b1_w4", 4, 21L, 0.93, 1.0, 8.5),
+            HistBlock("w1", 1, 17L, 0.95, 3.0, 7.5),
+            HistBlock("w2", 2, 10L, 0.98, 2.0, 8.0)
+        )
+
+        for (blk in blocks) {
+            for (ex in exercises) {
+                val dayOffset = (blk.daysAgoBase - (ex.dayNumber - 1)).coerceAtLeast(4L)
+                val dateIso = today.minusDays(dayOffset).toString()
+                val setCount = when (blk.weekNum) {
+                    1 -> ex.w1Sets
+                    2 -> ex.w2Sets
+                    4 -> ex.w4Sets
+                    else -> ex.w3Sets
+                }.coerceAtMost(4)
+                val baseReps = Regex("\\d+").find(ex.repRange)?.value?.toIntOrNull() ?: 10
+                val scaledWeight = if (ex.defaultWeightKg > 0.0) {
+                    (kotlin.math.round((ex.defaultWeightKg * blk.loadScale) / 2.5) * 2.5).coerceAtLeast(2.5)
+                } else {
+                    0.0
+                }
+                for (s in 1..setCount) {
+                    val idPrefix = if (blk.tag == "w1" || blk.tag == "w2") {
+                        "${blk.tag}_d${ex.dayNumber}_${ex.id}_s$s"
+                    } else {
+                        "${blk.tag}_d${ex.dayNumber}_${ex.id}_s$s"
+                    }
+                    val tplSession = if (blk.tag.startsWith("hist_")) blk.tag else null
+                    list.add(
+                        SetLog(
+                            id = idPrefix,
+                            week = blk.weekNum,
+                            dayNumber = ex.dayNumber,
+                            templateSessionId = tplSession,
+                            exerciseId = ex.id,
+                            exerciseName = ex.name,
+                            muscleId = ex.muscleId,
+                            setIndex = s,
+                            weightKg = scaledWeight,
+                            reps = baseReps,
+                            rir = blk.rirVal,
+                            restSeconds = ex.restSeconds,
+                            completed = true,
+                            completedDateIso = dateIso,
+                            rpe = (blk.baseRpe + (if (s == setCount) 0.5 else 0.0)).coerceAtMost(10.0)
+                        )
+                    )
+                }
             }
         }
         return list
@@ -654,6 +1026,42 @@ object SeedCatalog {
     fun defaultStarterTemplates(): List<WorkoutTemplate> {
         val now = System.currentTimeMillis()
         return listOf(
+            WorkoutTemplate(
+                "tpl_rp_hyp_chest_back", "RP Hypertrophy · Chest, Back & Arms", "Hypertrophy", "RP Hypertrophy · Upper",
+                "High-stimulus antagonist chest, lats, side delts, and arms hypertrophy template.",
+                serializeTemplateItems(listOf(
+                    TemplateExerciseItem("rph_1", "lib_incline_db_press", "Incline Dumbbell Press", "chest", 4, "8–12", 120, 32.0),
+                    TemplateExerciseItem("rph_2", "lib_pullups", "Pullups", "back", 4, "8–12", 120, 0.0),
+                    TemplateExerciseItem("rph_3", "lib_cable_flies", "Cable Flies", "chest", 3, "12–15", 75, 20.0),
+                    TemplateExerciseItem("rph_4", "lib_cable_rows", "Cable Rows", "back", 3, "10–15", 90, 70.0),
+                    TemplateExerciseItem("rph_5", "lib_db_side_laterals", "Dumbbell Side Laterals", "rear_side_delts", 4, "12–20", 60, 12.0),
+                    TemplateExerciseItem("rph_6", "lib_oh_ez_ext", "Overhead EZ Bar Extension", "triceps", 3, "10–15", 75, 27.5),
+                    TemplateExerciseItem("rph_7", "lib_db_curls", "Dumbbell Curls", "biceps", 3, "10–15", 60, 14.0)
+                )), now
+            ),
+            WorkoutTemplate(
+                "tpl_rp_hyp_quads_delts", "RP Hypertrophy · Quads, Hamstrings & Delts", "Hypertrophy", "RP Hypertrophy · Lower + Delts",
+                "Deep knee-flexion quad compounds paired with lengthened hamstrings, calves, and lateral delts.",
+                serializeTemplateItems(listOf(
+                    TemplateExerciseItem("rpq_1", "lib_high_bar_squat", "High Bar Squats", "quads", 4, "6–10", 180, 110.0),
+                    TemplateExerciseItem("rpq_2", "lib_sl_deadlift", "Stiff-Legged Deadlift", "hamstrings", 4, "8–12", 150, 105.0),
+                    TemplateExerciseItem("rpq_3", "lib_leg_press", "Leg Press", "quads", 3, "10–15", 120, 180.0),
+                    TemplateExerciseItem("rpq_4", "lib_lying_leg_curl", "Lying Leg Curls", "hamstrings", 3, "10–15", 90, 55.0),
+                    TemplateExerciseItem("rpq_5", "lib_leg_press_calves", "Calves on Leg Press", "calves", 4, "12–15", 60, 140.0),
+                    TemplateExerciseItem("rpq_6", "lib_db_rear_lateral", "Dumbbell Rear Lateral Raise", "rear_side_delts", 4, "15–20", 60, 10.0)
+                )), now
+            ),
+            WorkoutTemplate(
+                "tpl_rp_hyp_posterior_back", "RP Hypertrophy · Posterior Chain & Back Specialization", "Hypertrophy", "RP Hypertrophy · Posterior",
+                "Focused glute, hamstring, upper-back thickness, and biceps specialization session.",
+                serializeTemplateItems(listOf(
+                    TemplateExerciseItem("rpp_1", "lib_sumo_deficit_dl", "Sumo Deficit Deadlift", "glutes", 3, "6–10", 180, 130.0),
+                    TemplateExerciseItem("rpp_2", "lib_bb_bent_row", "Barbell Bent Row", "back", 4, "8–12", 120, 82.5),
+                    TemplateExerciseItem("rpp_3", "lib_glute_bridge", "Barbell Glute Bridge", "glutes", 3, "10–15", 120, 120.0),
+                    TemplateExerciseItem("rpp_4", "lib_weighted_pullups", "Weighted Pullups", "back", 3, "6–10", 150, 12.5),
+                    TemplateExerciseItem("rpp_5", "lib_ez_bar_curl", "EZ Bar Curls", "biceps", 4, "8–12", 75, 32.5)
+                )), now
+            ),
             WorkoutTemplate(
                 "tpl_full_body_beginner", "Full Body Beginner", "Starter", "Full Body · 3x/Week",
                 "Balanced compound hypertrophy foundation hitting every major muscle group in 45–55 minutes.",
@@ -714,9 +1122,111 @@ object SeedCatalog {
                     TemplateExerciseItem("up_6", "lib_weighted_dips", "Weighted Dips", "triceps", 3, "8–12", 90, 15.0),
                     TemplateExerciseItem("up_7", "lib_db_curls", "Dumbbell Curls", "biceps", 3, "10–15", 60, 14.0)
                 )), now
+            ),
+            WorkoutTemplate(
+                "tpl_yoga_sun_flow", "Morning Vinyasa Yoga & Spine Flow", "Starter", "Yoga · 20 Min",
+                "Restorative breath-synchronized yoga flow opening thoracic spine, hips, hamstrings, and shoulders.",
+                serializeTemplateItems(listOf(
+                    TemplateExerciseItem("yg_1", "lib_yoga_sun_salutation", "Sun Salutation Vinyasa Flow", "back", 3, "60s flow", 30, 0.0),
+                    TemplateExerciseItem("yg_2", "lib_yoga_down_dog_cobra", "Downward Dog to Cobra", "hamstrings", 3, "45s hold", 25, 0.0),
+                    TemplateExerciseItem("yg_3", "lib_yoga_warrior_flow", "Warrior II & Reverse Warrior", "quads", 3, "45s/side", 25, 0.0),
+                    TemplateExerciseItem("yg_4", "lib_stretch_pigeon_9090", "90/90 Hip & Pigeon Stretch", "glutes", 2, "60s/side", 20, 0.0)
+                )), now
+            ),
+            WorkoutTemplate(
+                "tpl_mobility_deep_stretch", "Full-Body Deep Stretching & Mobility", "Starter", "Stretching · 18 Min",
+                "Post-lifting or rest-day joint decompression targeting hip flexors, thoracic rotation, pecs, and calves.",
+                serializeTemplateItems(listOf(
+                    TemplateExerciseItem("st_1", "lib_stretch_worlds_greatest", "World's Greatest Lunge & Thoracic Opener", "back", 3, "5/side", 30, 0.0),
+                    TemplateExerciseItem("st_2", "lib_stretch_pigeon_9090", "90/90 Hip & Pigeon Stretch", "glutes", 3, "60s/side", 20, 0.0),
+                    TemplateExerciseItem("st_3", "lib_yoga_down_dog_cobra", "Downward Dog to Cobra", "hamstrings", 3, "45s", 20, 0.0)
+                )), now
+            ),
+            WorkoutTemplate(
+                "tpl_cardio_hiit_zone2", "HIIT + Zone 2 Cardio Conditioning", "Starter", "Cardio · 25 Min",
+                "Metabolic conditioning pairing crisp work-rest intervals with steady aerobic base work.",
+                serializeTemplateItems(listOf(
+                    TemplateExerciseItem("cd_1", "lib_cardio_zone2_incline", "Zone 2 Incline Walk / Bike", "quads", 2, "8 min", 45, 0.0),
+                    TemplateExerciseItem("cd_2", "lib_cardio_hiit_sprint", "Tabata Assault Bike / Rowing Sprint", "quads", 6, "30s sprint", 60, 0.0),
+                    TemplateExerciseItem("cd_3", "lib_cardio_jump_rope", "Jump Rope Conditioning", "calves", 4, "60s", 45, 0.0)
+                )), now
+            ),
+            WorkoutTemplate(
+                "tpl_forearm_beginner", "Forearm & Grip · Beginner Foundation", "Forearms & Grip", "Forearms · 15 Min",
+                "Joint-friendly wrist flexor, extensor, and brachioradialis starter routine you can run after any workout.",
+                serializeTemplateItems(listOf(
+                    TemplateExerciseItem("fa_b1", "lib_hammer_curl", "Dumbbell Hammer Curl", "forearms", 3, "10–14", 60, 12.0),
+                    TemplateExerciseItem("fa_b2", "lib_wrist_curl", "Cable / Barbell Wrist Curl", "forearms", 3, "15–20", 45, 20.0),
+                    TemplateExerciseItem("fa_b3", "lib_reverse_wrist_curl", "Dumbbell Reverse Wrist Curl", "forearms", 3, "15–20", 45, 6.0),
+                    TemplateExerciseItem("fa_b4", "lib_dead_hang_hold", "Dead Hang Grip Hold", "forearms", 2, "45s hold", 60, 0.0)
+                )), now
+            ),
+            WorkoutTemplate(
+                "tpl_forearm_intermediate", "Forearm & Grip · Hypertrophy Builder", "Forearms & Grip", "Forearms · 22 Min",
+                "Complete 360-degree forearm thickness targeting brachioradialis, finger flexors, and wrist extensors.",
+                serializeTemplateItems(listOf(
+                    TemplateExerciseItem("fa_i1", "lib_reverse_ez_curl", "Reverse-Grip EZ Bar Curl", "forearms", 4, "10–15", 60, 22.5),
+                    TemplateExerciseItem("fa_i2", "lib_behind_back_wrist_curl", "Behind-the-Back Barbell Wrist Curl", "forearms", 4, "12–20", 60, 35.0),
+                    TemplateExerciseItem("fa_i3", "lib_reverse_wrist_curl", "Dumbbell Reverse Wrist Curl", "forearms", 3, "15–20", 45, 8.0),
+                    TemplateExerciseItem("fa_i4", "lib_farmers_carry", "Heavy Dumbbell Farmer's Carry", "forearms", 3, "40m walk", 75, 28.0)
+                )), now
+            ),
+            WorkoutTemplate(
+                "tpl_forearm_advanced", "Forearm & Grip · Iron Grip Specialization", "Forearms & Grip", "Forearms · 28 Min",
+                "High-volume crushing, pinching, and loaded carry forearm specialization block.",
+                serializeTemplateItems(listOf(
+                    TemplateExerciseItem("fa_a1", "lib_hammer_curl", "Dumbbell Hammer Curl", "forearms", 4, "8–12", 75, 18.0),
+                    TemplateExerciseItem("fa_a2", "lib_behind_back_wrist_curl", "Behind-the-Back Barbell Wrist Curl", "forearms", 4, "15–20", 60, 45.0),
+                    TemplateExerciseItem("fa_a3", "lib_reverse_ez_curl", "Reverse-Grip EZ Bar Curl", "forearms", 3, "12–15", 60, 25.0),
+                    TemplateExerciseItem("fa_a4", "lib_wrist_roller_pinch", "Wrist Roller & Plate Pinch Hold", "forearms", 3, "45s roll", 60, 10.0),
+                    TemplateExerciseItem("fa_a5", "lib_farmers_carry", "Heavy Dumbbell Farmer's Carry", "forearms", 3, "45m walk", 90, 34.0)
+                )), now
             )
         )
     }
+
+    fun offlineGuidedFlows(): List<GuidedFlowRoutine> = listOf(
+        GuidedFlowRoutine(
+            id = "flow_yoga_morning",
+            title = "Sunrise Vinyasa Yoga",
+            modality = "Yoga",
+            durationMin = 15,
+            summary = "Fluid spinal articulation, hip opening, and nasal cadence breathing.",
+            steps = listOf(
+                GuidedFlowStep("Child's Pose & Ribcage Breath", 45, "Knees wide, reach fingertips forward, inhale 4s through nose and exhale 6s.", "back"),
+                GuidedFlowStep("Cat-Cow Spinal Waves", 45, "Segmentally articulate from tailbone to neck on each breath.", "back"),
+                GuidedFlowStep("Downward Facing Dog Pedal", 60, "Press floor away, lengthen spine, gently alternate heel presses.", "hamstrings"),
+                GuidedFlowStep("Low Lunge & Crescent Reach", 60, "Squeeze back glute, lift ribcage tall without lumbar overarching.", "quads"),
+                GuidedFlowStep("Warrior II to Reverse Warrior", 60, "Front thigh parallel, open hips, reach overhead to lengthen lats.", "glutes")
+            )
+        ),
+        GuidedFlowRoutine(
+            id = "flow_stretch_recovery",
+            title = "Post-Lift Deep Stretch",
+            modality = "Stretching",
+            durationMin = 12,
+            summary = "Parasympathetic down-regulation and loaded-muscle decompression.",
+            steps = listOf(
+                GuidedFlowStep("World's Greatest Lunge & T-Spine", 60, "Drop inside elbow toward instep, then rotate chest toward ceiling.", "back"),
+                GuidedFlowStep("Doorway / Floor Pec & Delt Opener", 45, "Arm at 90 degrees, gently rotate torso away and breathe slowly.", "chest"),
+                GuidedFlowStep("90/90 Hip & Pigeon Hold", 60, "Hinge forward with tall spine over front shin for deep glute stretch.", "glutes"),
+                GuidedFlowStep("Supine Hamstring & Calf Floss", 60, "Extend knee smoothly while flexing and pointing ankle.", "hamstrings")
+            )
+        ),
+        GuidedFlowRoutine(
+            id = "flow_cardio_metabolic",
+            title = "Athletic Cardio Intervals",
+            modality = "Cardio",
+            durationMin = 16,
+            summary = "Crisp aerobic + anaerobic intervals playable anywhere without gym machines.",
+            steps = listOf(
+                GuidedFlowStep("Brisk March / Jump Rope Warmup", 60, "Light elastic ankle bounce, relaxed shoulders, nasal breathing.", "calves"),
+                GuidedFlowStep("High-Knee / Bike Sprint Interval", 30, "Drive arms and knees crisply at 85% effort.", "quads"),
+                GuidedFlowStep("Active Walking Recovery", 45, "Slow heart rate down with deep belly inhales and long exhales.", "quads"),
+                GuidedFlowStep("Mountain Climber / Burpee Pace", 40, "Brace abs tight, smooth athletic rhythm.", "abs")
+            )
+        )
+    )
 
     fun defaultLibraryExercises(): List<LibraryExercise> = listOf(
         LibraryExercise("lib_bb_bench_press", "Barbell Bench Press", "CHEST", "chest", "front_delts,triceps", "Barbell",
@@ -810,6 +1320,34 @@ object SeedCatalog {
             "Direct forearm flexor isolation rolling from fingertip extension to full wrist flexion.",
             "Rest forearms across bench or thighs with wrists beyond edge.\nLet bar roll toward fingers, then curl wrists forcefully upward.\nPause 1 second at peak forearm squeeze.",
             "15–20", 60, 25.0, "https://www.youtube.com/results?search_query=Barbell+Wrist+Curl+Forearms"),
+        LibraryExercise("lib_reverse_ez_curl", "Reverse-Grip EZ Bar Curl", "ARMS", "forearms", "biceps", "EZ Bar",
+            "Pronated-grip elbow flexion directly building the outer brachioradialis and forearm extensors.",
+            "Take an overhand shoulder-width grip on an EZ bar with elbows pinned to your ribs.\nCurl smoothly to shoulder height while keeping wrists straight and strong.\nLower over 2–3 seconds to full elbow extension.",
+            "10–15", 60, 22.5, "https://www.youtube.com/results?search_query=Reverse+EZ+Bar+Curl+Forearms"),
+        LibraryExercise("lib_hammer_curl", "Dumbbell Hammer Curl", "ARMS", "forearms", "biceps", "Dumbbell",
+            "Neutral-palm curl targeting the thick brachioradialis muscle on top of the forearm alongside the brachialis.",
+            "Hold dumbbells with palms facing each other (thumbs up) at full arm extension.\nCurl up without swinging shoulders or torso.\nSqueeze 1 second at the top and lower slowly.",
+            "10–14", 60, 14.0, "https://www.youtube.com/results?search_query=Dumbbell+Hammer+Curl+Technique"),
+        LibraryExercise("lib_behind_back_wrist_curl", "Behind-the-Back Barbell Wrist Curl", "ARMS", "forearms", "", "Barbell",
+            "Standing finger-to-palm wrist curl overloading deep forearm belly flexors with zero elbow strain.",
+            "Stand tall holding a barbell behind your glutes with palms facing backward.\nLet the bar roll securely down to your fingertips, then curl knuckles upward.\nHold peak forearm contraction for 1 full second.",
+            "12–20", 60, 35.0, "https://www.youtube.com/results?search_query=Behind+The+Back+Barbell+Wrist+Curl"),
+        LibraryExercise("lib_reverse_wrist_curl", "Dumbbell Reverse Wrist Curl", "ARMS", "forearms", "", "Dumbbell",
+            "Essential wrist extensor isolation for balanced forearm size and healthy, pain-free elbows.",
+            "Rest forearms flat on a bench with palms facing down over the edge.\nRaise knuckles toward the ceiling through full pain-free range.\nLower slowly for 2 seconds on every rep.",
+            "15–20", 45, 7.0, "https://www.youtube.com/results?search_query=Dumbbell+Reverse+Wrist+Curl"),
+        LibraryExercise("lib_farmers_carry", "Heavy Dumbbell Farmer's Carry", "ARMS", "forearms", "traps,abs", "Dumbbell",
+            "Loaded walking carry building crushing grip endurance, upper traps, and rock-solid trunk stability.",
+            "Pick up heavy dumbbells with a tall chest and shoulders pulled slightly back.\nWalk briskly with controlled short steps for 30–45 meters without letting weights tilt.\nSet weights down safely with a hip hinge.",
+            "40m walk", 75, 28.0, "https://www.youtube.com/results?search_query=Dumbbell+Farmers+Walk+Grip"),
+        LibraryExercise("lib_dead_hang_hold", "Dead Hang Grip Hold", "ARMS", "forearms", "back", "Bodyweight",
+            "Timed overhead bar hang building iron finger-flexor endurance while gently decompressing the shoulders and spine.",
+            "Wrap thumbs securely around a pullup bar with full-hand grip.\nHang with ribs stacked and gentle shoulder engagement for 30–60 seconds.\nStep down smoothly between sets.",
+            "45s hold", 60, 0.0, "https://www.youtube.com/results?search_query=Dead+Hang+Grip+Strength"),
+        LibraryExercise("lib_wrist_roller_pinch", "Wrist Roller & Plate Pinch Hold", "ARMS", "forearms", "", "Other",
+            "Thumb pinch and continuous wrist-rolling finisher creating maximum forearm pump.",
+            "Pinch two smooth weight plates together with fingers and thumb (or wind a wrist roller up and down).\nKeep shoulders relaxed and wrists controlled throughout the 45-second effort.",
+            "45s roll", 60, 10.0, "https://www.youtube.com/results?search_query=Wrist+Roller+Plate+Pinch+Forearms"),
 
         LibraryExercise("lib_machine_crunch", "Machine Crunches", "CORE", "abs", "", "Machine",
             "Loaded spinal flexion allowing progressive overload across the rectus abdominis.",
@@ -851,7 +1389,41 @@ object SeedCatalog {
         LibraryExercise("lib_leg_press_calves", "Calves on Leg Press", "LEGS", "calves", "", "Machine",
             "Straight-knee plantarflexion prioritizing gastrocnemius stretch under load.",
             "Place balls of feet on bottom edge of sled with knees straight (soft unlock).\nLower heels into deep dorsiflexion stretch and pause 1–2 seconds.\nPress smoothly onto toes without bouncing.",
-            "12–15", 60, 140.0, "https://www.youtube.com/results?search_query=Leg+Press+Calf+Raise")
+            "12–15", 60, 140.0, "https://www.youtube.com/results?search_query=Leg+Press+Calf+Raise"),
+
+        // Offline Yoga, Stretching & Cardio Seed Exercises
+        LibraryExercise("lib_yoga_sun_salutation", "Sun Salutation Vinyasa Flow", "BACK", "back", "hamstrings,front_delts,abs", "Yoga",
+            "Breath-synchronized full-body yoga sequence linking overhead reach, forward fold, plank, cobra, and downward dog.",
+            "Inhale arms overhead in tall mountain posture.\nExhale hinge into forward fold, then step back to rigid plank.\nLower under control, inhale into cobra thoracic extension, and exhale hips high to downward dog.",
+            "60s flow", 30, 0.0, "https://www.youtube.com/results?search_query=Sun+Salutation+A+Yoga+Flow"),
+        LibraryExercise("lib_yoga_down_dog_cobra", "Downward Dog to Cobra", "LEGS", "hamstrings", "back,calves,front_delts", "Yoga",
+            "Dynamic posterior-chain lengthening paired with gentle prone spinal extension.",
+            "Press palms firmly and send sit-bones high to lengthen hamstrings and calves.\nRipple forward through plank and lower hips toward mat while lifting chest into cobra.\nBreathe slowly through the nose for 45–60 seconds.",
+            "45–60s", 25, 0.0, "https://www.youtube.com/results?search_query=Downward+Dog+to+Cobra+Flow"),
+        LibraryExercise("lib_yoga_warrior_flow", "Warrior II & Reverse Warrior", "LEGS", "quads", "glutes,abs,back", "Yoga",
+            "Isometric lower-body endurance posture combined with lateral ribcage and lat opening.",
+            "Take a wide stance with front knee stacked over ankle and arms extended at shoulder height.\nFlip front palm and arc overhead into Reverse Warrior while maintaining deep front-knee bend.\nHold 30–45 seconds per side.",
+            "45s/side", 25, 0.0, "https://www.youtube.com/results?search_query=Warrior+2+Reverse+Warrior+Yoga"),
+        LibraryExercise("lib_stretch_worlds_greatest", "World's Greatest Lunge & Thoracic Opener", "BACK", "back", "glutes,hamstrings,quads", "Stretching",
+            "Complete athletic mobility drill opening hip flexors, adductors, hamstrings, and thoracic spine in one sequence.",
+            "Step into a long forward lunge with back knee extended.\nLower inside elbow toward front instep, pause 2 seconds, then rotate arm skyward following your hand with your eyes.\nShift hips back briefly to lengthen front hamstring before switching sides.",
+            "5/side", 30, 0.0, "https://www.youtube.com/results?search_query=Worlds+Greatest+Stretch+Mobility"),
+        LibraryExercise("lib_stretch_pigeon_9090", "90/90 Hip & Pigeon Stretch", "LEGS", "glutes", "hamstrings,back", "Stretching",
+            "Deep external-rotation hip capsule and glute decompression ideal after squats, deadlifts, or desk work.",
+            "Set front leg at 90 degrees in front of torso and back leg at 90 degrees or extended behind.\nKeep spine long and hinge forward from the hips until a deep glute stretch is felt.\nRelax jaw and exhale slowly for 60 seconds per side.",
+            "60s/side", 20, 0.0, "https://www.youtube.com/results?search_query=90+90+Hip+Stretch+Mobility"),
+        LibraryExercise("lib_cardio_zone2_incline", "Zone 2 Incline Walk / Bike", "LEGS", "quads", "glutes,calves", "Cardio",
+            "Low-fatigue aerobic base conditioning improving mitochondrial density and between-set recovery.",
+            "Set treadmill to 6–10% incline at 4.8–5.8 km/h (or stationary bike at conversational nasal-breathing pace).\nMaintain steady heart rate at ~65–72% max HR without gripping handrails.",
+            "10–20 min", 45, 0.0, "https://www.youtube.com/results?search_query=Zone+2+Cardio+Incline+Treadmill"),
+        LibraryExercise("lib_cardio_hiit_sprint", "Tabata Assault Bike / Rowing Sprint", "LEGS", "quads", "back,hamstrings,abs", "Cardio",
+            "High-output anaerobic intervals boosting VO2 max and work capacity in minimal time.",
+            "Warm up 3 minutes easy.\nDrive 20–30 seconds at crisp 85–90% effort, followed by 40–60 seconds easy recovery spin/row.\nRepeat for 6–8 rounds.",
+            "30s sprint", 60, 0.0, "https://www.youtube.com/results?search_query=Assault+Bike+HIIT+Intervals"),
+        LibraryExercise("lib_cardio_jump_rope", "Jump Rope Conditioning", "LEGS", "calves", "forearms,abs,front_delts", "Cardio",
+            "Elastic plyometric footwork building calf resilience, coordination, and steady energy expenditure.",
+            "Keep elbows tucked near ribs and turn rope from the wrists.\nBounce 1–2 cm off balls of feet with soft knees for 60-second rounds.",
+            "60s", 45, 0.0, "https://www.youtube.com/results?search_query=Jump+Rope+Cardio+Form")
     )
 
     fun defaultTodayMetrics(): DailyMetrics = DailyMetrics(
@@ -869,9 +1441,7 @@ object SeedCatalog {
         return listOf(
             MealLog("seed_meal_prev3", today.minusDays(3).toString(), "Post-Workout", "Chicken Breast, Jasmine Rice & Avocado", 920, 74, 112, 18, now - 259200000L),
             MealLog("seed_meal_prev2", today.minusDays(2).toString(), "Breakfast", "Whey Isolate Oats & Berries", 680, 54, 88, 12, now - 172800000L),
-            MealLog("seed_meal_prev1", today.minusDays(1).toString(), "Dinner", "Lean Beef 93/7, Sweet Potato & Yogurt", 980, 76, 108, 24, now - 86400000L),
-            MealLog("seed_meal_1", today.toString(), "Breakfast", "Whey Isolate Oats, Banana & Egg Whites", 640, 52, 86, 10, now - 14400000L),
-            MealLog("seed_meal_2", today.toString(), "Pre-Workout", "Jasmine Rice, Chicken Breast & Honey", 590, 48, 84, 6, now - 7200000L)
+            MealLog("seed_meal_prev1", today.minusDays(1).toString(), "Dinner", "Lean Beef 93/7, Sweet Potato & Yogurt", 980, 76, 108, 24, now - 86400000L)
         )
     }
 
@@ -879,6 +1449,800 @@ object SeedCatalog {
         SavedCustomMeal("scm_1", "Whey Oats & Banana Bowl", "Breakfast", 640, 52, 86, 10, "Whey Isolate 32g, Oats 60g, Banana 120g"),
         SavedCustomMeal("scm_2", "Chicken & Jasmine Rice", "Post-Workout", 590, 48, 84, 6, "Chicken Breast 150g, Jasmine Rice 250g, Honey 15g"),
         SavedCustomMeal("scm_3", "Lean Beef & Sweet Potato", "Dinner", 720, 54, 78, 20, "Lean Beef 180g, Sweet Potato 250g, Olive Oil 7g"),
-        SavedCustomMeal("scm_4", "0% Greek Yogurt & Berries", "Snack", 315, 32, 28, 8, "Greek Yogurt 250g, Berries 100g, Almonds 14g")
+        SavedCustomMeal("scm_4", "0% Greek Yogurt & Berries", "Snack", 315, 32, 28, 8, "Greek Yogurt 250g, Berries 100g, Almonds 14g"),
+        SavedCustomMeal("scm_ind_1", "Paneer Bhurji & 2 Phulkas", "Dinner", 545, 36, 44, 18, "Low-Fat Paneer 150g, 2 Whole Wheat Phulkas, Onion-Tomato Masala"),
+        SavedCustomMeal("scm_ind_2", "High-Protein Soya Pulao & Dahi", "Post-Workout", 560, 41, 76, 8, "Soya Chunks 55g dry, Basmati Rice 150g, Low-Fat Dahi 150g"),
+        SavedCustomMeal("scm_ind_3", "Tandoori Chicken Tikka & Dal Bowl", "Dinner", 595, 54, 52, 12, "Chicken Breast Tikka 160g, Moong Dal 180g, Salad"),
+        SavedCustomMeal("scm_ind_4", "Moong Dal Paneer Chilla (2 pcs)", "Breakfast", 430, 31, 42, 12, "Green Moong Batter 120g, Grated Paneer 60g, Mint Chutney")
+    )
+
+    fun breathingAudioTracks(): List<BreathingAudioTrackInfo> = listOf(
+        BreathingAudioTrackInfo("tibetan_bowl", "Tibetan Singing Bowl", "Warm 432Hz harmonic overtones synced to inhale & exhale", 216.0),
+        BreathingAudioTrackInfo("ocean_breeze", "Ocean Tide Breeze", "Filtered coastal surf swell with gentle harmonic drone", 174.0),
+        BreathingAudioTrackInfo("rain_pad", "Evening Rain & Pad", "Soft rain shimmer layered over 528Hz Solfeggio chord", 264.0),
+        BreathingAudioTrackInfo("soft_chime", "Minimalist Breath Bell", "Quiet meditation bell cues at every phase transition", 396.0)
+    )
+
+    fun indianRecipes(): List<IndianRecipe> = listOf(
+        IndianRecipe(
+            id = "rec_paneer_bhurji_roti",
+            name = "High-Protein Low-Fat Paneer Bhurji & Phulka",
+            region = "North Indian",
+            dietaryTag = "High-Protein Veg",
+            mealType = "Dinner",
+            prepMinutes = 8,
+            cookMinutes = 10,
+            calories = 545,
+            proteinG = 36,
+            carbsG = 44,
+            fatG = 18,
+            summary = "Scrambled low-fat paneer tossed with ginger, green chillies, tomatoes, and kasuri methi alongside 2 whole-wheat phulkas.",
+            ingredients = listOf(
+                "150g low-fat paneer, crumbled",
+                "2 whole-wheat phulkas (70g)",
+                "1 medium onion + 1 ripe tomato, finely chopped",
+                "1 tsp cumin, 1/2 tsp turmeric, 1 tsp garam masala, kasuri methi",
+                "1 tsp cow ghee + fresh coriander"
+            ),
+            steps = listOf(
+                "Warm 1 tsp ghee in a non-stick pan and crackle cumin seeds with finely chopped ginger and green chilli.",
+                "Saute chopped onion for 3 minutes until translucent, then add tomatoes and dry spices until soft.",
+                "Fold in crumbled low-fat paneer and 2 tbsp water; cook gently for 3 minutes so paneer stays juicy.",
+                "Finish with crushed kasuri methi and coriander. Serve hot with 2 whole-wheat phulkas."
+            )
+        ),
+        IndianRecipe(
+            id = "rec_soya_matar_pulao",
+            name = "Soya Chunk & Green Pea Masala Pulao",
+            region = "Pan-Indian",
+            dietaryTag = "Vegan",
+            mealType = "Post-Workout",
+            prepMinutes = 10,
+            cookMinutes = 15,
+            calories = 530,
+            proteinG = 38,
+            carbsG = 78,
+            fatG = 6,
+            summary = "One-pot post-workout glycogen + plant-protein powerhouse with 38g complete protein.",
+            ingredients = listOf(
+                "55g dry soya chunks (boiled & squeezed)",
+                "65g dry aged basmati rice, soaked 15 min",
+                "50g green peas + 1 sliced onion",
+                "Whole spices (bay leaf, 2 cloves, 1/2 tsp jeera) + 1 tsp biryani masala",
+                "1 tsp cold-pressed oil + lemon wedge"
+            ),
+            steps = listOf(
+                "Boil soya chunks in salted water for 5 minutes, rinse in cool water, and squeeze dry.",
+                "Saute whole spices and sliced onions in 1 tsp oil inside a pressure cooker or pot.",
+                "Toss in soya chunks, green peas, drained basmati rice, biryani masala, and 140ml water.",
+                "Cook covered on low for 12 minutes (or 1 whistle). Fluff with a fork and squeeze fresh lemon."
+            )
+        ),
+        IndianRecipe(
+            id = "rec_moong_paneer_chilla",
+            name = "Stuffed Green Moong Dal & Paneer Chilla",
+            region = "North Indian",
+            dietaryTag = "High-Protein Veg",
+            mealType = "Breakfast",
+            prepMinutes = 10,
+            cookMinutes = 10,
+            calories = 435,
+            proteinG = 32,
+            carbsG = 42,
+            fatG = 12,
+            summary = "Crispy savory sprouted/soaked moong crepes stuffed with spiced grated paneer and mint chutney.",
+            ingredients = listOf(
+                "80g soaked green/yellow moong dal",
+                "65g grated low-fat paneer + chopped coriander",
+                "1 inch ginger, 1 green chilli, 1/2 tsp ajwain",
+                "1 tsp oil for roasting + 2 tbsp pudina dahi chutney"
+            ),
+            steps = listOf(
+                "Blend soaked moong dal with ginger, green chilli, salt, and minimal water into a smooth pourable batter.",
+                "Spread two thin ladles on a hot cast-iron tawa and brush lightly with 1/2 tsp oil.",
+                "Top center with spiced grated paneer, onions, and coriander; fold in half once golden crisp.",
+                "Serve immediately with fresh mint-coriander curd chutney."
+            )
+        ),
+        IndianRecipe(
+            id = "rec_tandoori_tikka_dal",
+            name = "Air-Fried Tandoori Chicken Tikka & Dal Tadka Bowl",
+            region = "Punjabi",
+            dietaryTag = "Non-Vegetarian",
+            mealType = "Dinner",
+            prepMinutes = 15,
+            cookMinutes = 14,
+            calories = 595,
+            proteinG = 55,
+            carbsG = 50,
+            fatG = 12,
+            summary = "Charred hung-curd marinated chicken breast cubes paired with comforting yellow moong dal and kachumber salad.",
+            ingredients = listOf(
+                "170g raw chicken breast cubed",
+                "50g thick hung curd + 1 tsp tandoori masala + lemon + ginger-garlic paste",
+                "180g cooked yellow moong dal tadka",
+                "100g cucumber-tomato-onion kachumber salad"
+            ),
+            steps = listOf(
+                "Coat chicken cubes in hung curd, ginger-garlic paste, Kashmiri chilli, tandoori masala, and lemon juice for 15 minutes.",
+                "Roast on a hot grill pan or air-fryer at 200C for 11-12 minutes until lightly charred and tender.",
+                "Ladle warm yellow moong dal tadka into a bowl, top with chicken tikka, and serve with crunchy kachumber."
+            )
+        ),
+        IndianRecipe(
+            id = "rec_masala_egg_bhurji_toast",
+            name = "Mumbai Style Egg Bhurji & Multigrain Roti",
+            region = "West Indian",
+            dietaryTag = "Eggetarian",
+            mealType = "Breakfast",
+            prepMinutes = 6,
+            cookMinutes = 8,
+            calories = 485,
+            proteinG = 31,
+            carbsG = 38,
+            fatG = 19,
+            summary = "Street-style spiced scrambled eggs boosted with extra egg whites for lean morning hypertrophy macros.",
+            ingredients = listOf(
+                "2 whole eggs + 3 liquid egg whites",
+                "2 whole-wheat or multigrain rotis (70g)",
+                "1 finely chopped onion, 1 tomato, 1/2 capsicum",
+                "1/2 tsp pav bhaji masala + turmeric + fresh coriander",
+                "1 tsp butter or ghee"
+            ),
+            steps = listOf(
+                "Whisk 2 whole eggs and 3 egg whites with a pinch of salt and turmeric.",
+                "Saute onion, capsicum, and tomato in 1 tsp ghee with pav bhaji masala until glossy.",
+                "Pour beaten eggs over medium-low heat, stirring gently for soft curds; top with coriander and pair with warm rotis."
+            )
+        ),
+        IndianRecipe(
+            id = "rec_sprouted_kala_chana_salad",
+            name = "Kala Chana, Tofu & Pomegranate Power Chaat",
+            region = "Pan-Indian",
+            dietaryTag = "Vegan",
+            mealType = "Snack",
+            prepMinutes = 10,
+            cookMinutes = 0,
+            calories = 375,
+            proteinG = 24,
+            carbsG = 46,
+            fatG = 9,
+            summary = "Zero-oil tangy pre-workout or evening chaat combining boiled black chickpeas, seared tofu, and chaat masala.",
+            ingredients = listOf(
+                "130g boiled kala chana (black chickpeas)",
+                "80g firm tofu cubes, lightly pan-toasted",
+                "1/2 cucumber, 1 tomato, 2 tbsp pomegranate arils",
+                "1 tsp roasted jeera powder, chaat masala, black salt & lime juice"
+            ),
+            steps = listOf(
+                "Toss warm boiled kala chana and golden pan-seared tofu cubes in a mixing bowl.",
+                "Add diced cucumber, tomato, green chilli, and fresh pomegranate.",
+                "Season generously with roasted cumin, chaat masala, and fresh lime juice; toss and eat fresh."
+            )
+        ),
+        IndianRecipe(
+            id = "rec_ragi_dosa_sambar",
+            name = "Crispy Fermented Ragi Dosa & Drumstick Sambar",
+            region = "South Indian",
+            dietaryTag = "Vegetarian",
+            mealType = "Breakfast",
+            prepMinutes = 8,
+            cookMinutes = 12,
+            calories = 460,
+            proteinG = 21,
+            carbsG = 68,
+            fatG = 9,
+            summary = "Calcium- and iron-rich finger-millet dosas paired with protein-packed toor dal vegetable sambar.",
+            ingredients = listOf(
+                "2 ragi + urad dal dosas (180g batter)",
+                "220ml thick toor dal vegetable sambar",
+                "40g roasted chana dal & coconut chutney",
+                "1 tsp sesame/gingelly oil"
+            ),
+            steps = listOf(
+                "Pour fermented ragi-urad batter in thin concentric circles on a seasoned cast-iron tawa.",
+                "Drizzle 1/2 tsp gingelly oil and roast until crisp at the edges.",
+                "Serve hot alongside piping-hot toor dal sambar and roasted chana chutney."
+            )
+        ),
+        IndianRecipe(
+            id = "rec_palak_paneer_quinoa",
+            name = "Homestyle Lehsuni Palak Paneer & Steamed Rice",
+            region = "North Indian",
+            dietaryTag = "Vegetarian",
+            mealType = "Dinner",
+            prepMinutes = 12,
+            cookMinutes = 15,
+            calories = 560,
+            proteinG = 33,
+            carbsG = 52,
+            fatG = 21,
+            summary = "Iron-rich blanched spinach puree tempered with roasted garlic and folded with soft paneer cubes.",
+            ingredients = listOf(
+                "130g low-fat paneer cubes",
+                "200g fresh spinach (blanched & pureed)",
+                "140g cooked basmati or brown rice",
+                "4 cloves minced garlic, jeera, garam masala, 1 tsp ghee"
+            ),
+            steps = listOf(
+                "Blanch washed spinach leaves for 2 minutes in boiling water, plunge into ice water, and blend smooth.",
+                "Temper cumin and golden minced garlic in 1 tsp ghee; stir in onion-tomato masala.",
+                "Simmer spinach puree for 4 minutes with paneer cubes so flavors infuse; serve with steamed rice."
+            )
+        ),
+        IndianRecipe(
+            id = "rec_dahi_oats_poha",
+            name = "High-Protein Curd Poha & Roasted Peanuts",
+            region = "Central / West Indian",
+            dietaryTag = "Vegetarian",
+            mealType = "Pre-Workout",
+            prepMinutes = 8,
+            cookMinutes = 6,
+            calories = 445,
+            proteinG = 20,
+            carbsG = 62,
+            fatG = 11,
+            summary = "Easy-digesting flattened rice tempered with curry leaves and mustard seeds, paired with thick curd.",
+            ingredients = listOf(
+                "60g thick poha (rinsed & drained)",
+                "150g low-fat dahi (curd) on the side",
+                "15g roasted peanuts + curry leaves + mustard seeds + turmeric",
+                "1 tsp oil + fresh lemon"
+            ),
+            steps = listOf(
+                "Rinse thick poha gently in a colander so grains soften without turning mushy.",
+                "Pop mustard seeds, curry leaves, green chilli, and peanuts in 1 tsp oil with turmeric.",
+                "Fold in poha, steam covered for 2 minutes, finish with lemon juice, and pair with chilled dahi."
+            )
+        ),
+        IndianRecipe(
+            id = "rec_malabar_fish_curry_rice",
+            name = "Light Kerala Fish Molee / Curry & Red Rice",
+            region = "South Indian",
+            dietaryTag = "Non-Vegetarian",
+            mealType = 15.let { "Dinner" },
+            prepMinutes = 10,
+            cookMinutes = 14,
+            calories = 540,
+            proteinG = 42,
+            carbsG = 56,
+            fatG = 14,
+            summary = "Omega-3 rich seer/white fish poached gently in spiced light coconut-tomato broth with steamed rice.",
+            ingredients = listOf(
+                "160g firm white fish / surmai fillets",
+                "150g cooked matta or basmati rice",
+                "60ml light coconut milk, curry leaves, kokum/tamarind, ginger",
+                "1 tsp coconut oil + black pepper & turmeric"
+            ),
+            steps = listOf(
+                "Saute shallots, julienned ginger, green chillies, and curry leaves in 1 tsp coconut oil.",
+                "Add turmeric, coriander powder, kokum/tomato, and 100ml water; bring to a gentle simmer.",
+                "Slide in fish fillets, poach covered 6 minutes, swirl in light coconut milk, and serve over warm rice."
+            )
+        ),
+        IndianRecipe(
+            id = "rec_rajma_chawal_bowl",
+            name = "Punjabi Homestyle Rajma Chawal & Kachumber",
+            region = "North Indian",
+            dietaryTag = "Vegan",
+            mealType = "Post-Workout",
+            prepMinutes = 10,
+            cookMinutes = 20,
+            calories = 550,
+            proteinG = 21,
+            carbsG = 94,
+            fatG = 8,
+            summary = "Complete amino-acid pairing of slow-simmered red kidney beans and aged basmati rice.",
+            ingredients = listOf(
+                "220g cooked rajma masala (minimal oil)",
+                "150g steamed basmati rice",
+                "Onion, ginger-garlic, tomato puree, amchur & garam masala",
+                "Fresh cucumber-onion lemon salad"
+            ),
+            steps = listOf(
+                "Pressure-cook overnight-soaked rajma until buttery soft when pressed.",
+                "Simmer onion-ginger-garlic and tomato masala with coriander, cumin, and Kashmiri chilli.",
+                "Combine boiled rajma with the masala, mash a few beans for thick gravy, simmer 8 minutes, and serve over rice."
+            )
+        ),
+        IndianRecipe(
+            id = "rec_sattu_whey_cooler",
+            name = "Roasted Chana Sattu & Buttermilk Recovery Drink",
+            region = "East Indian (Bihar/UP)",
+            dietaryTag = "High-Protein Veg",
+            mealType = "Snack",
+            prepMinutes = 4,
+            cookMinutes = 0,
+            calories = 285,
+            proteinG = 24,
+            carbsG = 34,
+            fatG = 5,
+            summary = "Cooling 4-minute savory summer drink combining roasted gram flour (sattu) and spiced chaas.",
+            ingredients = listOf(
+                "45g roasted chana sattu flour",
+                "250ml chilled spiced chaas / buttermilk (or 1/2 scoop unflavored whey)",
+                "1/2 tsp roasted cumin, black salt, chopped mint & lemon juice"
+            ),
+            steps = listOf(
+                "Whisk sattu flour with 60ml water first into a lump-free paste.",
+                "Top up with chilled chaas, roasted jeera, kala namak, finely chopped mint, and squeeze of lemon.",
+                "Stir briskly and drink chilled post-training or mid-afternoon."
+            )
+        ),
+        IndianRecipe(
+            id = "rec_chicken_keema_roti",
+            name = "Lean Chicken Breast Keema Matar & 2 Phulkas",
+            region = "North Indian",
+            dietaryTag = "Non-Vegetarian",
+            mealType = "Dinner",
+            prepMinutes = 10,
+            cookMinutes = 15,
+            calories = 565,
+            proteinG = 51,
+            carbsG = 48,
+            fatG = 13,
+            summary = "Spiced minced lean chicken breast simmered with sweet green peas and ginger juliennes.",
+            ingredients = listOf(
+                "165g lean minced chicken breast",
+                "50g green peas + 1 chopped onion & tomato",
+                "2 whole-wheat phulkas (70g)",
+                "1 tsp ginger-garlic paste, garam masala & 1 tsp ghee"
+            ),
+            steps = listOf(
+                "Brown onion and ginger-garlic paste in 1 tsp ghee until fragrant.",
+                "Add tomatoes, turmeric, coriander powder, and minced chicken; stir-fry 5 minutes.",
+                "Toss in green peas and 60ml water, cover 8 minutes on low, and serve with warm phulkas."
+            )
+        ),
+        IndianRecipe(
+            id = "rec_punjabi_chole_rice",
+            name = "Low-Oil Amritsari Chole & Jeera Brown Rice",
+            region = "Punjabi",
+            dietaryTag = "Vegan",
+            mealType = "Post-Workout",
+            prepMinutes = 10,
+            cookMinutes = 18,
+            calories = 540,
+            proteinG = 22,
+            carbsG = 89,
+            fatG = 9,
+            summary = "Slow-cooked chickpeas infused with roasted anardana and chana masala over nutty brown rice.",
+            ingredients = listOf(
+                "200g boiled white kabuli chana",
+                "150g cooked jeera brown rice",
+                "Onion-tomato masala + 1.5 tsp Amritsari chole masala",
+                "1 tsp mustard/olive oil + ginger & lemon"
+            ),
+            steps = listOf(
+                "Saute onion-ginger-tomato masala in 1 tsp oil with chole spices.",
+                "Add boiled chickpeas and simmer 10 minutes, lightly mashing 2 tbsp chickpeas for rich gravy.",
+                "Garnish with fresh coriander and lemon; serve with jeera brown rice."
+            )
+        ),
+        IndianRecipe(
+            id = "rec_tofu_tikka_kathi_roll",
+            name = "Tandoori Spiced Tofu Tikka Whole-Wheat Kathi Roll",
+            region = "East Indian (Kolkata)",
+            dietaryTag = "Vegan",
+            mealType = "Lunch",
+            prepMinutes = 10,
+            cookMinutes = 10,
+            calories = 470,
+            proteinG = 30,
+            carbsG = 46,
+            fatG = 16,
+            summary = "Smoky pan-charred extra-firm tofu strips wrapped in whole-wheat roti with mint chutney.",
+            ingredients = listOf(
+                "160g extra-firm tofu strips",
+                "1 large whole-wheat chapati wrap (65g)",
+                "Sliced bell peppers, red onion & mint-coriander chutney",
+                "1 tsp tandoori masala + lemon juice"
+            ),
+            steps = listOf(
+                "Toss tofu strips and bell peppers with tandoori spices and lemon.",
+                "Sear on high heat for 6 minutes until lightly charred.",
+                "Spread mint chutney over warm whole-wheat roti, pile in tofu tikka and pickled onions, and roll tight."
+            )
+        ),
+        IndianRecipe(
+            id = "rec_besan_paneer_toast",
+            name = "Savory Besan & Grated Paneer Masala Chilla",
+            region = "West Indian",
+            dietaryTag = "High-Protein Veg",
+            mealType = "Breakfast",
+            prepMinutes = 7,
+            cookMinutes = 9,
+            calories = 420,
+            proteinG = 29,
+            carbsG = 38,
+            fatG = 15,
+            summary = "Quick 15-minute chickpea-flour savory pancakes loaded with grated low-fat paneer and veggies.",
+            ingredients = listOf(
+                "60g besan (gram flour) + pinch of ajwain & turmeric",
+                "75g grated low-fat paneer",
+                "Finely diced spinach, onion, tomato & green chilli",
+                "1 tsp ghee for roasting"
+            ),
+            steps = listOf(
+                "Whisk besan with water, ajwain, turmeric, and chopped veggies into a lump-free batter.",
+                "Pour onto a hot tawa, scatter grated paneer across the top, and cook both sides until golden.",
+                "Serve hot with green chutney or plain curd."
+            )
+        ),
+        IndianRecipe(
+            id = "rec_makhana_chana_bhel",
+            name = "Crunchy Roasted Makhana & Bhuna Chana Gym Bhel",
+            region = "Pan-Indian",
+            dietaryTag = "Vegetarian",
+            mealType = "Snack",
+            prepMinutes = 5,
+            cookMinutes = 4,
+            calories = 310,
+            proteinG = 15,
+            carbsG = 48,
+            fatG = 6,
+            summary = "Crunchy 5-minute pre-workout snack mixing fox nuts, roasted gram, diced mango/tomato, and lime.",
+            ingredients = listOf(
+                "30g dry-roasted makhana (fox nuts)",
+                "45g crunchy bhuna chana (roasted chickpeas)",
+                "Chopped onion, tomato, cucumber & coriander",
+                "Chaat masala, roasted jeera & lime juice"
+            ),
+            steps = listOf(
+                "Dry-roast makhana in a pan for 4 minutes with a pinch of turmeric until crisp.",
+                "Toss immediately with bhuna chana, finely chopped salad veggies, chaat masala, and fresh lime."
+            )
+        ),
+        IndianRecipe(
+            id = "rec_kesar_elaichi_whey_oats",
+            name = "Kesar-Elaichi Rabri Style High-Protein Whey Oats",
+            region = "North Indian",
+            dietaryTag = "High-Protein Veg",
+            mealType = "Breakfast",
+            prepMinutes = 4,
+            cookMinutes = 6,
+            calories = 490,
+            proteinG = 37,
+            carbsG = 58,
+            fatG = 11,
+            summary = "Creamy cardamom-and-saffron porridge that tastes like festive kheer while delivering 37g protein.",
+            ingredients = listOf(
+                "55g rolled oats + 200ml toned milk/water",
+                "1 scoop (32g) vanilla or unflavored whey isolate",
+                "Pinch of saffron strands, 1/4 tsp green cardamom powder",
+                "10g slivered almonds & pistachios"
+            ),
+            steps = listOf(
+                "Simmer rolled oats with milk/water, saffron strands, and crushed cardamom for 5 minutes until creamy.",
+                "Take off the heat, cool 1 minute, then stir in whey protein isolate so it stays silky smooth.",
+                "Top with slivered almonds and pistachios."
+            ),
+            dietaryTags = listOf("Vegetarian", "High-Protein Veg")
+        ),
+        IndianRecipe(
+            id = "ifc_paneer_tikka_bowl",
+            name = "Chargrilled Low-Fat Paneer Tikka & Mint Quinoa Bowl",
+            region = "North Indian",
+            dietaryTag = "High-Protein Veg",
+            mealType = "Post-Workout",
+            prepMinutes = 12,
+            cookMinutes = 14,
+            calories = 445,
+            proteinG = 37,
+            carbsG = 38,
+            fatG = 15,
+            summary = "Smoky hung-curd marinated low-fat paneer cubes roasted with capsicum and red onion over fluffy cumin quinoa.",
+            ingredients = listOf(
+                "160g low-fat paneer, cubed",
+                "60g hung curd (thickened Greek-style dahi)",
+                "100g cooked quinoa or brown basmati rice",
+                "80g diced bell peppers & red onion",
+                "1 tsp Kashmiri chilli, roasted jeera, chaat masala & lemon juice"
+            ),
+            steps = listOf(
+                "Whisk hung curd, Kashmiri chilli, roasted cumin, turmeric, salt, and 1 tsp mustard oil into a thick marinade.",
+                "Coat paneer cubes, onion petals, and bell peppers; marinate 10 minutes.",
+                "Sear on a hot cast-iron tawa or air-fry at 200C for 10-12 minutes until charred at the edges.",
+                "Serve warm over steamed quinoa with fresh mint-coriander chutney."
+            ),
+            dietaryTags = listOf("Vegetarian", "High-Protein Veg")
+        ),
+        IndianRecipe(
+            id = "ifc_soya_keema_phulka",
+            name = "Dhaba Soya Granule Keema Matar with 2 Whole-Wheat Phulkas",
+            region = "Punjabi / North Indian",
+            dietaryTag = "Vegan",
+            mealType = "Dinner",
+            prepMinutes = 10,
+            cookMinutes = 18,
+            calories = 465,
+            proteinG = 39,
+            carbsG = 58,
+            fatG = 8,
+            summary = "Ultra-lean plant-protein soya keema simmered with green peas, tomato-onion bhuna masala, and whole-wheat rotis.",
+            ingredients = listOf(
+                "55g dry soya granules (boiled & squeezed thoroughly)",
+                "60g green peas (matar)",
+                "1 medium onion & 2 ripe tomatoes, finely chopped",
+                "1 tsp ginger-garlic paste, garam masala & kasuri methi",
+                "2 whole-wheat phulka rotis (no ghee)"
+            ),
+            steps = listOf(
+                "Boil soya granules in salted water for 5 minutes, rinse in cold water, and squeeze dry.",
+                "Saute onion and ginger-garlic paste in 1 tsp oil until golden; add tomatoes and spices.",
+                "Fold in soya granules and green peas with 100ml water; simmer 8 minutes and finish with crushed kasuri methi.",
+                "Serve hot alongside 2 flame-puffed whole-wheat phulkas."
+            ),
+            dietaryTags = listOf("Vegan", "Vegetarian", "High-Protein Veg")
+        ),
+        IndianRecipe(
+            id = "ifc_tandoori_chicken_raita",
+            name = "Tandoori Chicken Breast Fillet & Cucumber Jeera Raita",
+            region = "Punjabi / Mughlai",
+            dietaryTag = "Non-Vegetarian",
+            mealType = "Post-Workout",
+            prepMinutes = 15,
+            cookMinutes = 16,
+            calories = 385,
+            proteinG = 54,
+            carbsG = 9,
+            fatG = 13,
+            summary = "High-protein lean chicken breast marinated in spiced curd and lemon, served with cooling roasted-cumin cucumber raita.",
+            ingredients = listOf(
+                "200g skinless chicken breast, scored",
+                "50g low-fat curd for marinade + 100g curd for raita",
+                "1 tsp ginger-garlic paste, tandoori masala & Kashmiri mirch",
+                "60g grated cucumber & fresh mint leaves",
+                "1 tsp lemon juice & 1 tsp mustard oil"
+            ),
+            steps = listOf(
+                "Rub chicken breast with lemon juice, salt, ginger-garlic paste, spiced curd, and mustard oil.",
+                "Grill, bake, or air-fry at 205C for 14-16 minutes until juicy.",
+                "Whisk chilled curd with grated cucumber, roasted cumin powder, and mint to serve alongside."
+            ),
+            dietaryTags = listOf("Non-Vegetarian")
+        ),
+        IndianRecipe(
+            id = "ifc_pesarattu_ginger_chutney",
+            name = "Andhra Whole Green Moong Pesarattu & Allam Chutney",
+            region = "South Indian / Andhra",
+            dietaryTag = "Vegan",
+            mealType = "Breakfast",
+            prepMinutes = 10,
+            cookMinutes = 10,
+            calories = 360,
+            proteinG = 21,
+            carbsG = 52,
+            fatG = 7,
+            summary = "No-fermentation sprouted whole green gram crepes topped with finely chopped onions, cumin seeds, and tangy ginger-tamarind chutney.",
+            ingredients = listOf(
+                "90g soaked whole green moong (with skin)",
+                "1 tbsp raw rice (for crispness)",
+                "1 inch ginger, 1 green chilli & 1/2 tsp jeera",
+                "30g finely diced red onion",
+                "2 tbsp tangy ginger-tamarind (allam) chutney"
+            ),
+            steps = listOf(
+                "Grind soaked green moong, rice, ginger, and green chilli with minimal water into a coarse dosa batter.",
+                "Spread onto a hot skillet, scatter chopped onion and cumin seeds on top, and cook with 1/2 tsp sesame oil until crisp.",
+                "Serve immediately with spicy ginger-tamarind chutney."
+            ),
+            dietaryTags = listOf("Vegan", "Vegetarian", "High-Protein Veg")
+        ),
+        IndianRecipe(
+            id = "ifc_palak_paneer_rotis",
+            name = "Iron-Rich Low-Oil Palak Paneer with Jowar Bhakri",
+            region = "North & West Indian",
+            dietaryTag = "High-Protein Veg",
+            mealType = "Dinner",
+            prepMinutes = 12,
+            cookMinutes = 15,
+            calories = 430,
+            proteinG = 31,
+            carbsG = 39,
+            fatG = 16,
+            summary = "Blanched emerald spinach puree tempered with garlic and nutmeg, simmered with soft paneer cubes and gluten-free sorghum flatbread.",
+            ingredients = listOf(
+                "150g low-fat paneer cubes",
+                "200g fresh spinach leaves (blanched & pureed)",
+                "4 cloves garlic, 1 green chilli & pinch of nutmeg",
+                "1 jowar (sorghum) millet bhakri (55g flour)",
+                "1 tsp ghee"
+            ),
+            steps = listOf(
+                "Blanch spinach in boiling water for 90 seconds, plunge into ice water, and blend smooth with green chilli.",
+                "Saute sliced garlic and cumin in 1 tsp ghee; stir in spinach puree, salt, and a pinch of nutmeg.",
+                "Fold in paneer cubes to warm through for 4 minutes and serve with freshly patted jowar bhakri."
+            ),
+            dietaryTags = listOf("Vegetarian", "High-Protein Veg")
+        ),
+        IndianRecipe(
+            id = "ifc_chicken_chettinad_bowl",
+            name = "Pepper Chicken Chettinad Roast & Parboiled Red Rice",
+            region = "South Indian / Tamil Nadu",
+            dietaryTag = "Non-Vegetarian",
+            mealType = "Dinner",
+            prepMinutes = 15,
+            cookMinutes = 22,
+            calories = 510,
+            proteinG = 46,
+            carbsG = 47,
+            fatG = 14,
+            summary = "Fragrant freshly ground black peppercorn, fennel, and curry leaf chicken roast paired with mineral-rich South Indian matta rice.",
+            ingredients = listOf(
+                "180g boneless chicken thigh/breast mix",
+                "140g cooked Kerala matta / parboiled rice",
+                "1 tbsp freshly toasted black pepper, fennel & coriander seeds",
+                "1 sprig fresh curry leaves, shallots & 1 tomato",
+                "1.5 tsp cold-pressed sesame (gingelly) oil"
+            ),
+            steps = listOf(
+                "Dry-roast peppercorns, fennel, cumin, and coriander seeds; grind into a coarse aromatic powder.",
+                "Saute shallots, curry leaves, and ginger-garlic in sesame oil; add chicken pieces and sear on high heat.",
+                "Add chopped tomato and ground Chettinad spice mix; cook covered until tender and serve with parboiled red rice."
+            ),
+            dietaryTags = listOf("Non-Vegetarian")
+        ),
+        IndianRecipe(
+            id = "ifc_amritsari_grilled_fish",
+            name = "Air-Fried Amritsari Ajwain Fish Tikka & Kachumber Salad",
+            region = "Punjabi / North Indian",
+            dietaryTag = "Non-Vegetarian",
+            mealType = "Dinner",
+            prepMinutes = 12,
+            cookMinutes = 12,
+            calories = 335,
+            proteinG = 43,
+            carbsG = 12,
+            fatG = 12,
+            summary = "Flaky white fish fillets coated in a light carom-seed (ajwain) and roasted besan crust, air-fried crisp without deep-frying.",
+            ingredients = listOf(
+                "200g bhetki, surmai, or tilapia fillet cut into chunks",
+                "1.5 tbsp roasted besan (gram flour) & 2 tbsp curd",
+                "1/2 tsp crushed ajwain (carom seeds), garlic & lemon juice",
+                "150g crunchy cucumber-radish-onion kachumber salad",
+                "1 tsp mustard oil"
+            ),
+            steps = listOf(
+                "Whisk roasted besan, curd, crushed ajwain, garlic paste, turmeric, chilli, lemon juice, and mustard oil.",
+                "Gently coat fish chunks and rest for 10 minutes.",
+                "Air-fry or oven-broil at 200C for 10-12 minutes until golden; serve with lemon wedges and kachumber salad."
+            ),
+            dietaryTags = listOf("Non-Vegetarian")
+        ),
+        IndianRecipe(
+            id = "ifc_tofu_chana_masala",
+            name = "Smoky Tofu & Chickpea Tikka Masala Bowl",
+            region = "Modern Indian Fusion",
+            dietaryTag = "Vegan",
+            mealType = "Post-Workout",
+            prepMinutes = 10,
+            cookMinutes = 16,
+            calories = 440,
+            proteinG = 28,
+            carbsG = 49,
+            fatG = 14,
+            summary = "Dairy-free high-protein curry combining firm soy tofu cubes and tender kabuli chana in a cashew-tomato masala.",
+            ingredients = listOf(
+                "140g extra-firm tofu, pressed and pan-seared",
+                "90g cooked chickpeas (kabuli chana)",
+                "2 ripe tomatoes, 1 onion & 4 soaked cashews blended smooth",
+                "1 tsp Kashmiri mirch, garam masala & kasuri methi",
+                "1 whole-wheat phulka roti"
+            ),
+            steps = listOf(
+                "Pan-sear cubed firm tofu on a dry non-stick skillet until lightly browned.",
+                "Simmer onion-tomato-cashew puree with Kashmiri chilli, coriander powder, and garam masala for 8 minutes.",
+                "Add chickpeas and seared tofu with a splash of water; simmer 5 minutes, crush kasuri methi on top, and serve with 1 roti."
+            ),
+            dietaryTags = listOf("Vegan", "Vegetarian", "High-Protein Veg")
+        ),
+        IndianRecipe(
+            id = "ifc_curd_rice_probiotic",
+            name = "Tempered Probiotic Thayer Sadam (Curd Rice) & Peanuts",
+            region = "South Indian",
+            dietaryTag = "Vegetarian",
+            mealType = "Pre-Workout",
+            prepMinutes = 6,
+            cookMinutes = 4,
+            calories = 340,
+            proteinG = 14,
+            carbsG = 48,
+            fatG = 10,
+            summary = "Gut-soothing soft rice whipped with thick probiotic curd, grated carrot, pomegranate, and a crackling mustard-hing tadka.",
+            ingredients = listOf(
+                "130g soft-cooked rice",
+                "140g thick low-fat probiotic curd (dahi)",
+                "1 tbsp roasted peanuts & 1/2 tsp urad dal",
+                "Mustard seeds, curry leaves, grated ginger & pinch of hing",
+                "2 tbsp grated carrot & pomegranate arils"
+            ),
+            steps = listOf(
+                "Mash warm rice lightly and fold in thick curd, salt, and grated ginger.",
+                "Crackle mustard seeds, urad dal, roasted peanuts, hing, and curry leaves in 1/2 tsp oil; pour over curd rice.",
+                "Top with grated carrot and pomegranate seeds."
+            ),
+            dietaryTags = listOf("Vegetarian")
+        ),
+        IndianRecipe(
+            id = "ifc_quinoa_dal_khichdi",
+            name = "One-Pot Masala Quinoa & Yellow Moong Dal Khichdi",
+            region = "Gujarati / Rajasthani",
+            dietaryTag = "High-Protein Veg",
+            mealType = "Dinner",
+            prepMinutes = 8,
+            cookMinutes = 18,
+            calories = 395,
+            proteinG = 20,
+            carbsG = 58,
+            fatG = 9,
+            summary = "Comforting recovery one-pot meal swapping white rice for quinoa alongside split yellow moong dal and seasonal vegetables.",
+            ingredients = listOf(
+                "50g dry quinoa + 50g yellow split moong dal (washed)",
+                "100g mixed diced carrots, French beans & green peas",
+                "1/2 tsp cumin seeds, hing, turmeric & crushed black pepper",
+                "1.5 tsp A2 cow ghee for tempering"
+            ),
+            steps = listOf(
+                "Temper cumin seeds, hing, ginger, and turmeric in ghee inside a pressure cooker.",
+                "Add diced vegetables, washed quinoa, moong dal, salt, and 320ml water.",
+                "Pressure cook for 2 whistles until creamy and comforting; garnish with fresh coriander."
+            ),
+            dietaryTags = listOf("Vegetarian", "High-Protein Veg")
+        ),
+        IndianRecipe(
+            id = "ifc_dal_tadka_jeera_rice",
+            name = "Homestyle Yellow Dal Tadka & Steamed Jeera Basmati Bowl",
+            region = "Pan-Indian Classic",
+            dietaryTag = "Vegan",
+            mealType = "Lunch",
+            prepMinutes = 10,
+            cookMinutes = 18,
+            calories = 430,
+            proteinG = 19,
+            carbsG = 68,
+            fatG = 8,
+            summary = "Comforting everyday toor & masoor dal tempered with roasted cumin, garlic, and tomatoes alongside fluffy jeera basmati rice.",
+            ingredients = listOf(
+                "70g dry toor + red masoor dal blend",
+                "150g cooked steamed jeera basmati rice",
+                "1 medium tomato & 1 small onion, finely chopped",
+                "3 cloves garlic, 1/2 tsp jeera, turmeric & fresh coriander",
+                "1.5 tsp cold-pressed oil or desi ghee"
+            ),
+            steps = listOf(
+                "Pressure cook washed toor and masoor dal with turmeric, salt, and water until velvety soft.",
+                "Sizzle cumin seeds, minced garlic, onion, and tomato in 1.5 tsp oil for the fragrant tadka.",
+                "Pour sizzling tadka over the dal, garnish with coriander, and serve beside warm jeera rice."
+            ),
+            dietaryTags = listOf("Vegan", "Vegetarian")
+        ),
+        IndianRecipe(
+            id = "ifc_masala_egg_bhurji_roti",
+            name = "Street-Style 5-Egg Masala Bhurji & 2 Whole-Wheat Phulkas",
+            region = "Maharashtrian / Pan-Indian",
+            dietaryTag = "Eggetarian",
+            mealType = "Lunch",
+            prepMinutes = 7,
+            cookMinutes = 8,
+            calories = 485,
+            proteinG = 33,
+            carbsG = 44,
+            fatG = 19,
+            summary = "Fluffy spiced scrambled eggs cooked with finely diced onions, tomatoes, pav bhaji masala, and fresh coriander with warm rotis.",
+            ingredients = listOf(
+                "3 whole eggs + 2 extra egg whites, whisked",
+                "2 whole-wheat phulka rotis",
+                "60g finely chopped red onion, tomato & green chilli",
+                "1/2 tsp pav bhaji masala, turmeric & fresh coriander",
+                "1 tsp butter or olive oil"
+            ),
+            steps = listOf(
+                "Saute finely chopped onion, green chilli, and tomato in 1 tsp butter until glossy.",
+                "Stir in turmeric and pav bhaji masala, then pour in whisked eggs on medium-low heat.",
+                "Fold gently until soft curds form, top with coriander, and enjoy hot with 2 whole-wheat rotis."
+            ),
+            dietaryTags = listOf("Eggetarian")
+        )
     )
 }

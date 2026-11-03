@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.hyperlog.rp">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-sdk
         android:minSdkVersion="26"
@@ -9,17 +8,38 @@
     <!-- Native hardware vibration for rest timers & set checkoffs -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
-    <!-- Optional Android Health Connect permissions (syncs with Google Fit on device) -->
+    <!-- Optional Mobile Data & Wi-Fi access to pull 870+ online exercises directly into local SQLite -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- Android Health Connect permissions (Android 8–15 + Google Fit sync on device) -->
+    <uses-permission android:name="android.permission.health.READ_EXERCISE" />
     <uses-permission android:name="android.permission.health.WRITE_EXERCISE" />
     <uses-permission android:name="android.permission.health.WRITE_TOTAL_CALORIES_BURNED" />
     <uses-permission android:name="android.permission.health.WRITE_NUTRITION" />
     <uses-permission android:name="android.permission.health.WRITE_WEIGHT" />
     <uses-permission android:name="android.permission.health.READ_STEPS" />
 
-    <!-- Package visibility for Android Health Connect & Google Fit -->
+    <!-- Package & Intent visibility for Android 14/15 Framework Health Connect, Play Store Health Connect & Google Fit -->
     <queries>
+        <package android:name="com.google.android.healthconnect.controller" />
         <package android:name="com.google.android.apps.healthdata" />
         <package android:name="com.google.android.apps.fitness" />
+        <intent>
+            <action android:name="android.health.connect.action.HEALTH_CONNECT_SETTINGS" />
+        </intent>
+        <intent>
+            <action android:name="android.health.connect.action.MANAGE_HEALTH_PERMISSIONS" />
+        </intent>
+        <intent>
+            <action android:name="androidx.health.ACTION_HEALTH_CONNECT_SETTINGS" />
+        </intent>
+        <intent>
+            <action android:name="androidx.health.ACTION_MANAGE_HEALTH_PERMISSIONS" />
+        </intent>
+        <intent>
+            <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+        </intent>
     </queries>
 
     <application
@@ -81,6 +101,13 @@
                 <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
             </intent-filter>
         </activity-alias>
+
+        <!-- Zero-dependency FileProvider for sharing generated Single-Day & All-History PDFs -->
+        <provider
+            android:name="com.hyperlog.rp.HyperLogFileProvider"
+            android:authorities="com.hyperlog.rp.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true" />
 
     </application>
 </manifest>

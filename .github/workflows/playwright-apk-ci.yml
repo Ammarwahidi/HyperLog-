@@ -1,0 +1,90 @@
+name: HyperLog v4.0 — Playwright E2E & Claymorphism APK CI/CD
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  web-and-playwright-e2e:
+    name: TypeScript Lint, Vite Build & Playwright E2E (Desktop + Android Mobile)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Static TypeScript & Lint Verification
+        run: npm run lint
+
+      - name: Production Frontend Build
+        run: npm run build
+
+      - name: Install Playwright Chromium Browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Execute Playwright End-to-End Test Suite
+        run: npm run test:e2e
+
+      - name: Upload Playwright HTML & JSON Test Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-e2e-reports
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14
+
+  android-claymorphism-apk-build:
+    name: Build & Verify Signed Unified Web+Native Android APK (v4.0.0 · Build 16)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22 & Sync Unified Web Assets into APK
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Build Web UI & Sync Android Assets
+        run: npm ci && npm run build
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK (API 35)
+        uses: android-actions/setup-android@v3
+
+      - name: Assemble Signed Release APK
+        working-directory: android-native
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Verify APK v1/v2/v3 Cryptographic Signatures
+        run: |
+          APKSIGNER_BIN=$(find $ANDROID_HOME/build-tools -name apksigner | sort -V | tail -n 1)
+          "$APKSIGNER_BIN" verify --verbose android-native/app/build/outputs/apk/release/app-release.apk
+
+      - name: Upload Signed Claymorphism APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HyperLog-v4.0-claymorphism-release-apk
+          path: android-native/app/build/outputs/apk/release/app-release.apk
+          retention-days: 30

@@ -6,6 +6,7 @@ import {
   NutritionPhase,
   OfflineFoodItem,
 } from '../types/workout';
+import { INDIAN_OFFLINE_FOOD_ITEMS } from './indianNutritionData';
 
 export const ACTIVITY_LEVEL_META: Record<
   ActivityLevel,
@@ -571,4 +572,5 @@ export const OFFLINE_FOOD_CATALOG: OfflineFoodItem[] = [
     per100gCarbs: 6.5,
     per100gFat: 0.3,
   },
+  ...INDIAN_OFFLINE_FOOD_ITEMS,
 ];

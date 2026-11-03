@@ -1,5 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  ActiveStandaloneSession,
+  DailyNutritionRecord,
+  ExerciseModality,
   ExercisePrescription,
   LibraryExercise,
   MuscleId,
@@ -7,62 +10,121 @@ import {
   SetLogEntry,
   TemplateExerciseItem,
   WorkoutDayPlan,
+  WorkoutHistoryRecord,
   WorkoutTemplate,
 } from '../types/workout';
 import {
   ATTACHED_CSV_PATH,
+  INITIAL_WORKOUT_PLAN,
   MESOCYCLE_WEEKS,
   SHEET_INSTRUCTIONS,
 } from '../data/rpPlanData';
+import { INITIAL_WORKOUT_TEMPLATES } from '../data/exerciseCatalog';
+import {
+  MODALITY_FILTER_ORDER,
+  resolveTemplateModality,
+} from '../data/allInOneFitnessCatalog';
 import { ExercisePickerModal } from './ExercisePickerModal';
+import { PastWorkoutExerciseDraft, WorkoutCalendar } from './WorkoutCalendar';
+import {
+  buildHelpTargetFromDayPlan,
+  buildHelpTargetFromTemplate,
+  WorkoutHelpModal,
+  WorkoutHelpTarget,
+} from './WorkoutHelpModal';
 import {
   ArrowDown,
   ArrowRight,
   ArrowUp,
+  BookOpen,
   CalendarPlus,
   Check,
+  ChevronDown,
+  ChevronUp,
   Copy,
+  DownloadCloud,
   Edit3,
   FileSpreadsheet,
   Play,
   Plus,
+  Search,
   Trash2,
   X,
 } from 'lucide-react';
 
 interface Page3WorkoutsProps {
   activeWeek: number;
-  onChangeWeek: (week: number) => void;
+  onChangeWeek?: (week: number) => void;
   plan: WorkoutDayPlan[];
   templates: WorkoutTemplate[];
   exerciseLibrary: LibraryExercise[];
   landmarks: Record<MuscleId, MuscleLandmark>;
   setLogs: SetLogEntry[];
+  workoutHistory: WorkoutHistoryRecord[];
+  nutritionByDate: Record<string, DailyNutritionRecord>;
+  weightUnit: 'kg' | 'lb';
+  streakDays: number;
+  bestStreakDays: number;
+  activeStandaloneSession?: ActiveStandaloneSession | null;
   onSaveDayPlan: (updatedDay: WorkoutDayPlan) => Promise<void>;
   onSaveTemplate: (template: WorkoutTemplate) => Promise<void>;
   onDeleteTemplate: (templateId: string) => Promise<void>;
   onAssignTemplateToDay: (template: WorkoutTemplate, dayNumber: number) => Promise<void>;
   onStartStandaloneTemplate: (template: WorkoutTemplate) => Promise<void>;
+  onSaveHistoryRecord: (record: WorkoutHistoryRecord) => Promise<void>;
+  onLogPastWorkout: (params: {
+    dateIso: string;
+    title: string;
+    durationMinutes?: number;
+    notes?: string;
+    exercises: PastWorkoutExerciseDraft[];
+  }) => Promise<void>;
+  onDeleteManualHistoryRecord: (recordId: string) => Promise<void>;
   onOpenDayInTracker: (dayNumber: number) => void;
+  onRepeatWorkout: (session: WorkoutHistoryRecord) => void;
+  onReturnToLiveTracker?: () => void;
+  onSyncOnlineCatalog: () => Promise<{
+    addedExercises: number;
+    addedTemplates: number;
+    totalExercises: number;
+  }>;
+  isSyncingOnline?: boolean;
+  onCreateCustomExercise?: (exercise: LibraryExercise) => Promise<void>;
 }
 
 export const Page3Workouts: React.FC<Page3WorkoutsProps> = ({
   activeWeek,
-  onChangeWeek,
   plan,
   templates,
   exerciseLibrary,
   landmarks,
   setLogs,
+  workoutHistory,
+  nutritionByDate,
+  weightUnit,
+  streakDays,
+  bestStreakDays,
+  activeStandaloneSession,
   onSaveDayPlan,
   onSaveTemplate,
   onDeleteTemplate,
   onAssignTemplateToDay,
   onStartStandaloneTemplate,
+  onSaveHistoryRecord,
+  onLogPastWorkout,
+  onDeleteManualHistoryRecord,
   onOpenDayInTracker,
+  onRepeatWorkout,
+  onReturnToLiveTracker,
+  onSyncOnlineCatalog,
+  isSyncingOnline = false,
+  onCreateCustomExercise,
 }) => {
-  const [subTab, setSubTab] = useState<'templates' | 'schedule'>('templates');
-  const [templateFilter, setTemplateFilter] = useState<'all' | 'Starter' | 'Custom'>('all');
+  const [subTab, setSubTab] = useState<'templates' | 'schedule' | 'calendar'>('templates');
+  const [templateFilter, setTemplateFilter] = useState<'all' | 'Starter' | 'Online' | 'Custom'>('all');
+  const [modalityFilter, setModalityFilter] = useState<ExerciseModality>(ExerciseModality.All);
+  const [templateSearch, setTemplateSearch] = useState<string>('');
+  const [showWorkoutFilters, setShowWorkoutFilters] = useState<boolean>(false);
 
   const [editingExerciseId, setEditingExerciseId] = useState<string | null>(null);
   const [draftName, setDraftName] = useState<string>('');
@@ -72,7 +134,15 @@ export const Page3Workouts: React.FC<Page3WorkoutsProps> = ({
 
   const [assignDayMap, setAssignDayMap] = useState<Record<string, number>>({});
   const [statusBanner, setStatusBanner] = useState<string | null>(null);
+  const [assignedJumpDay, setAssignedJumpDay] = useState<number | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [expandedCardIds, setExpandedCardIds] = useState<Record<string, boolean>>({});
+  const [showGuidelines, setShowGuidelines] = useState<boolean>(false);
+  const [workoutHelpTarget, setWorkoutHelpTarget] = useState<WorkoutHelpTarget | null>(null);
+
+  const toggleCardExpanded = (cardKey: string) => {
+    setExpandedCardIds((prev) => ({ ...prev, [cardKey]: !prev[cardKey] }));
+  };
 
   const [isEditorOpen, setIsEditorOpen] = useState<boolean>(false);
   const [editorTemplate, setEditorTemplate] = useState<WorkoutTemplate | null>(null);
@@ -87,14 +157,54 @@ export const Page3Workouts: React.FC<Page3WorkoutsProps> = ({
       .catch(() => setRawCsvPreview(''));
   }, []);
 
-  const filteredTemplates = useMemo(() => {
-    if (templateFilter === 'all') return templates;
-    return templates.filter((t) => t.category === templateFilter);
-  }, [templates, templateFilter]);
+  const effectiveTemplates = useMemo(
+    () => (templates.length > 0 ? templates : INITIAL_WORKOUT_TEMPLATES),
+    [templates]
+  );
+  const effectivePlan = useMemo(
+    () => (plan.length > 0 ? plan : INITIAL_WORKOUT_PLAN),
+    [plan]
+  );
 
-  const showToast = (msg: string) => {
+  const filteredTemplates = useMemo(() => {
+    const tokens = templateSearch
+      .trim()
+      .toLowerCase()
+      .split(' ')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    return effectiveTemplates.filter((t) => {
+      if (templateFilter !== 'all' && t.category !== templateFilter) return false;
+      const mod = resolveTemplateModality(t);
+      if (modalityFilter !== ExerciseModality.All && mod !== modalityFilter) {
+        return false;
+      }
+      if (tokens.length === 0) return true;
+      const haystack = `${t.name} ${t.splitType} ${t.description} ${mod} ${t.exercises
+        .map((e) => e.name)
+        .join(' ')}`.toLowerCase();
+      return tokens.every((tok) => haystack.includes(tok));
+    });
+  }, [effectiveTemplates, templateFilter, modalityFilter, templateSearch]);
+
+  const handlePullOnlineWorkouts = async () => {
+    try {
+      const res = await onSyncOnlineCatalog();
+      showToast(
+        `Synced online database: ${res.totalExercises} exercises & +${res.addedTemplates} new workout programs ready.`
+      );
+    } catch {
+      showToast('Could not reach online fitness catalog right now.');
+    }
+  };
+
+  const showToast = (msg: string, jumpDay?: number) => {
     setStatusBanner(msg);
-    window.setTimeout(() => setStatusBanner(null), 3500);
+    setAssignedJumpDay(jumpDay ?? null);
+    window.setTimeout(() => {
+      setStatusBanner(null);
+      setAssignedJumpDay(null);
+    }, 4500);
   };
 
   const handleOpenNewTemplate = () => {
@@ -165,7 +275,7 @@ export const Page3Workouts: React.FC<Page3WorkoutsProps> = ({
 
   const handlePickerSelect = async (libEx: LibraryExercise) => {
     if (pickerTargetDayNumber !== null) {
-      const targetDay = plan.find((d) => d.dayNumber === pickerTargetDayNumber);
+      const targetDay = effectivePlan.find((d) => d.dayNumber === pickerTargetDayNumber);
       if (targetDay) {
         const nextOrder = targetDay.exercises.length + 1;
         const newPresc: ExercisePrescription = {
@@ -245,7 +355,7 @@ export const Page3Workouts: React.FC<Page3WorkoutsProps> = ({
   const handleAssignClick = async (tpl: WorkoutTemplate) => {
     const dayNum = assignDayMap[tpl.id] ?? 1;
     await onAssignTemplateToDay(tpl, dayNum);
-    showToast(`Assigned "${tpl.name}" to Day ${dayNum} of your weekly schedule.`);
+    showToast(`Assigned "${tpl.name}" to Day ${dayNum}.`, dayNum);
   };
 
   const handleStartEditScheduleExercise = (ex: ExercisePrescription) => {
@@ -281,126 +391,238 @@ export const Page3Workouts: React.FC<Page3WorkoutsProps> = ({
   };
 
   return (
-    <div className="space-y-6">
+    <div data-testid="workouts-page-root" className="space-y-6">
       {/* Header & Primary Mode Switcher */}
       <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
-        <div>
+        <div className="min-w-0">
           <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white tracking-tight">
-            Workouts &amp; Templates
+            Workouts &amp; Routines
           </h1>
           <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-1">
-            Build custom templates, launch standalone sessions, or customize your 7-day schedule
+            Pick a guided routine that fits your energy today, shape your weekly rhythm, or check your calendar.
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
           <div
-            className="flex items-center gap-1 p-1 rounded-xl bg-slate-200/80 dark:bg-slate-800/90"
+            className="flex items-center gap-1 p-1 rounded-xl hl-subtle border overflow-x-auto no-scrollbar max-w-full"
             role="tablist"
             aria-label="Workouts section mode"
           >
             <button
               type="button"
               role="tab"
+              data-testid="workouts-subtab-templates"
               aria-selected={subTab === 'templates'}
               onClick={() => setSubTab('templates')}
-              className={`min-h-[40px] px-3.5 sm:px-4 py-1.5 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 ${
+              className={`no-touch-delay min-h-[40px] px-3.5 sm:px-4 py-1.5 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 ${
                 subTab === 'templates'
-                  ? 'bg-slate-900 dark:bg-blue-600 text-white shadow-xs'
+                  ? 'bg-slate-900 dark:bg-sky-600 text-white shadow-xs'
                   : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
-              Templates ({templates.length})
+              Routines ({effectiveTemplates.length})
             </button>
             <button
               type="button"
               role="tab"
+              data-testid="workouts-subtab-schedule"
               aria-selected={subTab === 'schedule'}
               onClick={() => setSubTab('schedule')}
-              className={`min-h-[40px] px-3.5 sm:px-4 py-1.5 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 ${
+              className={`no-touch-delay min-h-[40px] px-3.5 sm:px-4 py-1.5 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 ${
                 subTab === 'schedule'
-                  ? 'bg-slate-900 dark:bg-blue-600 text-white shadow-xs'
+                  ? 'bg-slate-900 dark:bg-sky-600 text-white shadow-xs'
                   : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
-              7-Day Schedule
+              Weekly Plan
+            </button>
+            <button
+              type="button"
+              role="tab"
+              data-testid="workouts-subtab-calendar"
+              aria-selected={subTab === 'calendar'}
+              onClick={() => setSubTab('calendar')}
+              className={`no-touch-delay min-h-[40px] px-3.5 sm:px-4 py-1.5 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 ${
+                subTab === 'calendar'
+                  ? 'bg-slate-900 dark:bg-sky-600 text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              Calendar
             </button>
           </div>
 
           {subTab === 'templates' && (
-            <button
-              type="button"
-              onClick={handleOpenNewTemplate}
-              className="min-h-[40px] px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-xl transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0"
-            >
-              <Plus className="w-4 h-4" />
-              New Template
-            </button>
+            <div className="flex flex-wrap items-center gap-2 min-w-0">
+              <button
+                type="button"
+                disabled={isSyncingOnline}
+                onClick={handlePullOnlineWorkouts}
+                className="no-touch-delay min-h-[40px] px-3.5 py-2 hl-subtle border text-slate-800 dark:text-slate-100 hover:border-sky-500 text-xs font-semibold rounded-xl transition-colors flex items-center gap-1.5 whitespace-nowrap disabled:opacity-60"
+              >
+                <DownloadCloud className="w-4 h-4 text-sky-600 dark:text-sky-400" />
+                <span>{isSyncingOnline ? 'Syncing…' : 'Sync More Routines'}</span>
+              </button>
+              <button
+                type="button"
+                data-testid="create-new-template-btn"
+                onClick={handleOpenNewTemplate}
+                className="no-touch-delay min-h-[40px] px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold rounded-xl transition-colors flex items-center gap-1.5 whitespace-nowrap"
+              >
+                <Plus className="w-4 h-4" />
+                <span>New Routine</span>
+              </button>
+            </div>
           )}
         </div>
       </div>
 
       {statusBanner && (
-        <div className="p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-700 text-xs font-semibold text-emerald-800 dark:text-emerald-200 flex items-center gap-2">
-          <Check className="w-4 h-4 shrink-0" />
-          <span>{statusBanner}</span>
+        <div className="p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-700 text-xs font-semibold text-emerald-800 dark:text-emerald-200 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Check className="w-4 h-4 shrink-0" />
+            <span>{statusBanner}</span>
+          </div>
+          {assignedJumpDay !== null && (
+            <button
+              type="button"
+              onClick={() => onOpenDayInTracker(assignedJumpDay)}
+              className="no-touch-delay min-h-[34px] px-3 py-1 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-semibold transition-colors inline-flex items-center gap-1 whitespace-nowrap"
+            >
+              <span>Track Day {assignedJumpDay}</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       )}
 
       {/* SUB-TAB 1: WORKOUT TEMPLATES STUDIO */}
       {subTab === 'templates' && (
         <div className="space-y-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-1 p-1 hl-subtle border rounded-xl overflow-x-auto no-scrollbar">
-              {(
-                [
-                  { id: 'all', label: 'All Templates' },
-                  { id: 'Starter', label: 'Starter' },
-                  { id: 'Custom', label: 'My Custom' },
-                ] as const
-              ).map((f) => (
+          <div className="hl-card rounded-2xl p-4 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="search"
+                  value={templateSearch}
+                  onChange={(e) => setTemplateSearch(e.target.value)}
+                  placeholder="Search routines by goal, Yoga, Cardio, Full Body, or movement..."
+                  className="w-full min-h-[42px] pl-9 pr-4 py-1.5 text-xs sm:text-sm hl-input rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-600"
+                />
+              </div>
+
+              <div className="flex items-center justify-between sm:justify-end gap-2.5 shrink-0">
+                <span className="text-xs font-mono tabular-nums text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                  {filteredTemplates.length} of {effectiveTemplates.length} routines
+                </span>
                 <button
-                  key={f.id}
                   type="button"
-                  onClick={() => setTemplateFilter(f.id)}
-                  className={`min-h-[36px] px-3 py-1 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 ${
-                    templateFilter === f.id
-                      ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
-                      : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-                  }`}
+                  data-testid="toggle-workout-filters-btn"
+                  aria-expanded={showWorkoutFilters}
+                  onClick={() => setShowWorkoutFilters((v) => !v)}
+                  className="no-touch-delay min-h-[40px] px-3.5 py-1.5 rounded-xl hl-subtle border text-xs font-semibold text-slate-700 dark:text-slate-200 hover:border-sky-400 transition-colors flex items-center gap-1.5 whitespace-nowrap"
                 >
-                  {f.label}
+                  <span>{showWorkoutFilters ? 'Hide Filters' : 'Filter Routines'}</span>
+                  {showWorkoutFilters ? (
+                    <ChevronUp className="w-3.5 h-3.5 shrink-0" />
+                  ) : (
+                    <ChevronDown className="w-3.5 h-3.5 shrink-0" />
+                  )}
                 </button>
-              ))}
+              </div>
             </div>
 
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Start any template standalone or assign it to Days 1–7
-            </p>
+            {showWorkoutFilters && (
+              <div
+                data-testid="workout-filters-panel"
+                className="pt-3 border-t border-slate-200/80 dark:border-slate-800 space-y-2.5"
+              >
+                <div className="flex items-center gap-1 p-1 hl-subtle border rounded-xl overflow-x-auto no-scrollbar">
+                  {(
+                    [
+                      { id: 'all', label: 'All Sources' },
+                      { id: 'Starter', label: 'Built-In' },
+                      { id: 'Online', label: 'Online Library' },
+                      { id: 'Custom', label: 'My Custom' },
+                    ] as const
+                  ).map((f) => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => setTemplateFilter(f.id)}
+                      className={`no-touch-delay min-h-[34px] px-3 py-1 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 ${
+                        templateFilter === f.id
+                          ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
+                          : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex items-center gap-1 overflow-x-auto no-scrollbar pb-0.5">
+                  {MODALITY_FILTER_ORDER.map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setModalityFilter(m.id)}
+                      className={`no-touch-delay min-h-[34px] px-3 py-1 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 ${
+                        modalityFilter === m.id
+                          ? 'bg-slate-900 dark:bg-sky-600 text-white'
+                          : 'hl-subtle border text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {filteredTemplates.length === 0 ? (
             <div className="hl-card rounded-2xl p-8 sm:p-10 text-center space-y-3">
               <p className="text-base font-bold text-slate-900 dark:text-white">
-                No custom workout templates created yet
+                {templateFilter === 'Custom' && !templateSearch.trim()
+                  ? 'No custom workout templates created yet'
+                  : 'No workout templates match your active filter'}
               </p>
               <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
-                Build a template from scratch with custom sets, rep ranges, and rest timers, or
-                duplicate any starter routine.
+                {templateFilter === 'Custom' && !templateSearch.trim()
+                  ? 'Build a template from scratch with custom sets, rep ranges, and rest timers, or duplicate any starter routine.'
+                  : 'Clear your search/discipline filters to view all built-in hypertrophy, grip, cardio, and yoga templates, or create a new custom template.'}
               </p>
-              <div className="pt-2">
+              <div className="pt-2 flex flex-wrap items-center justify-center gap-2.5">
+                {(templateFilter !== 'all' ||
+                  modalityFilter !== ExerciseModality.All ||
+                  templateSearch.trim().length > 0) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTemplateFilter('all');
+                      setModalityFilter(ExerciseModality.All);
+                      setTemplateSearch('');
+                    }}
+                    className="no-touch-delay min-h-[42px] px-4 py-2 hl-subtle border text-slate-800 dark:text-slate-100 hover:border-blue-500 text-xs font-semibold rounded-xl inline-flex items-center gap-1.5"
+                  >
+                    Reset Filters
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={handleOpenNewTemplate}
-                  className="min-h-[42px] px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-xl inline-flex items-center gap-1.5"
+                  className="no-touch-delay min-h-[42px] px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-xl inline-flex items-center gap-1.5"
                 >
                   <Plus className="w-4 h-4" />
-                  Create First Custom Template
+                  Create Custom Template
                 </button>
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <div data-testid="workouts-template-grid" className="grid grid-cols-1 lg:grid-cols-2 gap-5">
               {filteredTemplates.map((tpl) => {
                 const totalSets = tpl.exercises.reduce((sum, e) => sum + e.sets, 0);
                 const estMinutes = estimateTemplateDurationMinutes(tpl);
@@ -409,15 +631,16 @@ export const Page3Workouts: React.FC<Page3WorkoutsProps> = ({
                 return (
                   <div
                     key={tpl.id}
+                    data-testid={`workout-template-card-${tpl.id}`}
                     className="hl-card rounded-2xl p-4 sm:p-5 flex flex-col justify-between space-y-4"
                   >
                     <div className="space-y-3.5">
-                      <div className="flex items-start justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-3">
+                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-3">
                         <div className="min-w-0">
                           <p className="text-xs text-slate-500 dark:text-slate-400 font-mono tabular-nums">
-                            {tpl.category} · {tpl.splitType} · {totalSets} sets · ~{estMinutes} min
+                            ~{estMinutes} min · {tpl.exercises.length} movements · {totalSets} sets
                           </p>
-                          <h2 className="text-lg font-bold text-slate-900 dark:text-white mt-0.5 truncate">
+                          <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white mt-0.5 leading-snug">
                             {tpl.name}
                           </h2>
                           <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">
@@ -425,119 +648,182 @@ export const Page3Workouts: React.FC<Page3WorkoutsProps> = ({
                           </p>
                         </div>
 
-                        <div className="flex items-center gap-1 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => handleOpenEditTemplate(tpl)}
-                            className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                            title="Customize template"
-                            aria-label={`Customize ${tpl.name}`}
-                          >
-                            <Edit3 className="w-4 h-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDuplicateTemplate(tpl)}
-                            className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                            title="Duplicate template"
-                            aria-label={`Duplicate ${tpl.name}`}
-                          >
-                            <Copy className="w-4 h-4" />
-                          </button>
-                          {confirmDeleteId === tpl.id ? (
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                await onDeleteTemplate(tpl.id);
-                                setConfirmDeleteId(null);
-                                showToast(`Deleted template "${tpl.name}"`);
-                              }}
-                              className="min-h-[38px] px-2.5 py-1 text-[11px] font-bold bg-red-600 text-white rounded-lg"
-                            >
-                              Confirm
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => setConfirmDeleteId(tpl.id)}
-                              className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-lg text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
-                              title="Delete template"
-                              aria-label={`Delete ${tpl.name}`}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="divide-y divide-slate-200/70 dark:divide-slate-800">
-                        {tpl.exercises.map((item, idx) => (
-                          <div
-                            key={item.id}
-                            className="py-2 first:pt-0 last:pb-0 flex items-center justify-between gap-3 text-xs"
-                          >
-                            <div className="min-w-0 truncate">
-                              <span className="font-mono tabular-nums text-slate-400 dark:text-slate-500 mr-1.5">
-                                {idx + 1}.
-                              </span>
-                              <span className="font-semibold text-slate-900 dark:text-white">
-                                {item.name}
-                              </span>
-                              <span className="text-slate-400 dark:text-slate-500" aria-hidden="true">
-                                {' '}
-                                ·{' '}
-                              </span>
-                              <span className="text-slate-500 dark:text-slate-400">
-                                {landmarks[item.primaryMuscle]?.shortName}
-                              </span>
-                            </div>
-
-                            <span className="font-mono tabular-nums text-slate-700 dark:text-slate-300 font-medium whitespace-nowrap shrink-0">
-                              {item.sets} × {item.reps} · {item.restSeconds}s
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
-                      <button
-                        type="button"
-                        onClick={() => onStartStandaloneTemplate(tpl)}
-                        className="min-h-[42px] px-4 py-2 bg-slate-900 dark:bg-blue-600 hover:opacity-90 text-white text-xs font-semibold rounded-xl transition-opacity flex items-center justify-center gap-1.5 whitespace-nowrap"
-                      >
-                        <Play className="w-3.5 h-3.5" />
-                        Start Standalone
-                      </button>
-
-                      <div className="flex items-center gap-1.5">
-                        <select
-                          aria-label={`Select day to assign ${tpl.name}`}
-                          value={selectedAssignDay}
-                          onChange={(e) =>
-                            setAssignDayMap((prev) => ({
-                              ...prev,
-                              [tpl.id]: Number(e.target.value),
-                            }))
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setWorkoutHelpTarget(buildHelpTargetFromTemplate(tpl))
                           }
-                          className="flex-1 sm:flex-none min-h-[42px] px-2.5 py-1.5 text-xs font-medium hl-input rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600"
+                          className="no-touch-delay self-start min-h-[38px] px-2.5 py-1.5 rounded-lg hl-subtle border text-xs font-semibold text-sky-600 dark:text-sky-400 hover:border-sky-500 transition-colors flex items-center gap-1 whitespace-nowrap shrink-0"
+                          title={`How to perform ${tpl.name}`}
                         >
-                          {[1, 2, 3, 4, 5, 6, 7].map((dNum) => (
-                            <option key={dNum} value={dNum}>
-                              Day {dNum}
-                            </option>
-                          ))}
-                        </select>
+                          <BookOpen className="w-3.5 h-3.5" />
+                          <span>Guide</span>
+                        </button>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => toggleCardExpanded(`tpl_${tpl.id}`)}
+                          className="no-touch-delay min-h-[36px] px-3 py-1 rounded-lg hl-subtle border text-xs font-semibold text-slate-700 dark:text-slate-200 hover:border-slate-400 transition-colors inline-flex items-center gap-1.5 whitespace-nowrap"
+                        >
+                          <span>
+                            {expandedCardIds[`tpl_${tpl.id}`]
+                              ? `Hide Movements (${tpl.exercises.length})`
+                              : `Preview ${tpl.exercises.length} Movements`}
+                          </span>
+                          {expandedCardIds[`tpl_${tpl.id}`] ? (
+                            <ChevronUp className="w-3.5 h-3.5" />
+                          ) : (
+                            <ChevronDown className="w-3.5 h-3.5" />
+                          )}
+                        </button>
 
                         <button
                           type="button"
-                          onClick={() => handleAssignClick(tpl)}
-                          className="min-h-[42px] px-3 py-1.5 text-xs font-semibold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 rounded-xl transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0"
+                          data-testid={`toggle-card-actions-${tpl.id}`}
+                          onClick={() => toggleCardExpanded(`act_${tpl.id}`)}
+                          className="no-touch-delay min-h-[36px] px-3 py-1 rounded-lg hl-subtle border text-xs font-semibold text-slate-600 dark:text-slate-300 hover:border-slate-400 transition-colors inline-flex items-center gap-1.5 whitespace-nowrap"
                         >
-                          <CalendarPlus className="w-3.5 h-3.5" />
-                          Assign to Day
+                          <span>
+                            {expandedCardIds[`act_${tpl.id}`]
+                              ? 'Hide Options'
+                              : 'Schedule or Edit'}
+                          </span>
+                          {expandedCardIds[`act_${tpl.id}`] ? (
+                            <ChevronUp className="w-3.5 h-3.5" />
+                          ) : (
+                            <ChevronDown className="w-3.5 h-3.5" />
+                          )}
                         </button>
                       </div>
+
+                      {expandedCardIds[`tpl_${tpl.id}`] && (
+                        <div className="divide-y divide-slate-200/70 dark:divide-slate-800">
+                          {tpl.exercises.map((item, idx) => (
+                            <div
+                              key={item.id}
+                              className="py-2 first:pt-0 last:pb-0 flex items-center justify-between gap-3 text-xs"
+                            >
+                              <div className="min-w-0 truncate">
+                                <span className="font-mono tabular-nums text-slate-400 dark:text-slate-500 mr-1.5">
+                                  {idx + 1}.
+                                </span>
+                                <span className="font-semibold text-slate-900 dark:text-white">
+                                  {item.name}
+                                </span>
+                                <span
+                                  className="text-slate-400 dark:text-slate-500"
+                                  aria-hidden="true"
+                                >
+                                  {' '}
+                                  ·{' '}
+                                </span>
+                                <span className="text-slate-500 dark:text-slate-400">
+                                  {landmarks[item.primaryMuscle]?.shortName}
+                                </span>
+                              </div>
+
+                              <span className="font-mono tabular-nums text-slate-700 dark:text-slate-300 font-medium whitespace-nowrap shrink-0">
+                                {item.sets} × {item.reps}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {expandedCardIds[`act_${tpl.id}`] && (
+                        <div className="p-3 rounded-xl hl-subtle border space-y-2.5">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                              Assign to Weekly Plan
+                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <select
+                                aria-label={`Select day to assign ${tpl.name}`}
+                                value={selectedAssignDay}
+                                onChange={(e) =>
+                                  setAssignDayMap((prev) => ({
+                                    ...prev,
+                                    [tpl.id]: Number(e.target.value),
+                                  }))
+                                }
+                                className="min-h-[38px] px-2.5 py-1 text-xs font-medium hl-input rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-600"
+                              >
+                                {[1, 2, 3, 4, 5, 6, 7].map((dNum) => (
+                                  <option key={dNum} value={dNum}>
+                                    Day {dNum}
+                                  </option>
+                                ))}
+                              </select>
+
+                              <button
+                                type="button"
+                                onClick={() => handleAssignClick(tpl)}
+                                className="no-touch-delay min-h-[38px] px-3 py-1.5 text-xs font-semibold text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-950/60 hover:bg-sky-100 dark:hover:bg-sky-900/60 rounded-xl transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0"
+                              >
+                                <CalendarPlus className="w-3.5 h-3.5" />
+                                <span>Assign to Day</span>
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="pt-2 border-t border-slate-200/80 dark:border-slate-800 flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditTemplate(tpl)}
+                              className="no-touch-delay min-h-[36px] px-3 py-1 rounded-lg hl-card border text-xs font-semibold text-slate-700 dark:text-slate-200 hover:border-slate-400 flex items-center gap-1.5 whitespace-nowrap"
+                              aria-label={`Customize ${tpl.name}`}
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                              <span>Customize</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDuplicateTemplate(tpl)}
+                              className="no-touch-delay min-h-[36px] px-3 py-1 rounded-lg hl-card border text-xs font-semibold text-slate-700 dark:text-slate-200 hover:border-slate-400 flex items-center gap-1.5 whitespace-nowrap"
+                              aria-label={`Duplicate ${tpl.name}`}
+                            >
+                              <Copy className="w-3.5 h-3.5" />
+                              <span>Duplicate</span>
+                            </button>
+                            {confirmDeleteId === tpl.id ? (
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  await onDeleteTemplate(tpl.id);
+                                  setConfirmDeleteId(null);
+                                  showToast(`Removed routine "${tpl.name}"`);
+                                }}
+                                className="no-touch-delay min-h-[36px] px-3 py-1 text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white rounded-lg whitespace-nowrap"
+                              >
+                                Confirm Remove
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setConfirmDeleteId(tpl.id)}
+                                className="no-touch-delay min-h-[36px] px-3 py-1 rounded-lg hl-card border text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-amber-700 dark:hover:text-amber-300 flex items-center gap-1.5 whitespace-nowrap"
+                                aria-label={`Delete ${tpl.name}`}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>Remove</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="pt-3 border-t border-slate-200 dark:border-slate-800">
+                      <button
+                        type="button"
+                        onClick={() => onStartStandaloneTemplate(tpl)}
+                        className="no-touch-delay w-full min-h-[44px] px-4 py-2 bg-slate-900 dark:bg-sky-600 hover:opacity-90 text-white text-xs sm:text-sm font-semibold rounded-xl transition-opacity flex items-center justify-center gap-1.5 whitespace-nowrap"
+                      >
+                        <Play className="w-3.5 h-3.5" />
+                        <span>Start Workout</span>
+                      </button>
                     </div>
                   </div>
                 );
@@ -547,191 +833,246 @@ export const Page3Workouts: React.FC<Page3WorkoutsProps> = ({
         </div>
       )}
 
-      {/* SUB-TAB 2: 7-DAY MESOCYCLE SCHEDULE */}
+      {/* SUB-TAB 2: 7-DAY TRAINING SCHEDULE */}
       {subTab === 'schedule' && (
         <div className="space-y-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-200/80 dark:bg-slate-800/90 overflow-x-auto no-scrollbar">
-              {MESOCYCLE_WEEKS.map((w) => (
-                <button
-                  key={w.week}
-                  type="button"
-                  onClick={() => onChangeWeek(w.week)}
-                  className={`min-h-[38px] px-3 py-1 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 ${
-                    activeWeek === w.week
-                      ? 'bg-slate-900 dark:bg-blue-600 text-white'
-                      : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  {w.week === 5 ? 'Deload' : `Wk ${w.week}`}
-                </button>
-              ))}
+            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">
+              Your calm 7-day rhythm — open any day to log sets or swap movements whenever life shifts.
+            </p>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowGuidelines((v) => !v)}
+                className="no-touch-delay min-h-[40px] px-3.5 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 hl-card hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl flex items-center gap-1.5 whitespace-nowrap shrink-0"
+              >
+                <span>{showGuidelines ? 'Hide Tips' : 'Helpful Tips'}</span>
+                {showGuidelines ? (
+                  <ChevronUp className="w-3.5 h-3.5" />
+                ) : (
+                  <ChevronDown className="w-3.5 h-3.5" />
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowRawSheet((v) => !v)}
+                className="no-touch-delay min-h-[40px] px-3.5 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 hl-card hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl flex items-center gap-1.5 whitespace-nowrap shrink-0"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+                <span>{showRawSheet ? 'Hide CSV' : 'Source CSV'}</span>
+              </button>
             </div>
-
-            <button
-              type="button"
-              onClick={() => setShowRawSheet((v) => !v)}
-              className="min-h-[40px] px-3.5 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 hl-card hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl flex items-center gap-1.5 whitespace-nowrap shrink-0"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5" />
-              {showRawSheet ? 'Hide Attached CSV' : 'Inspect Attached Sheet'}
-            </button>
           </div>
 
-          <div className="hl-card rounded-2xl p-4 sm:p-5 space-y-3">
-            <h2 className="text-sm font-bold text-slate-900 dark:text-white">
-              Mesocycle Progression Guidelines
-            </h2>
-            <ul className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1.5 text-xs text-slate-600 dark:text-slate-300 list-disc pl-4">
-              {SHEET_INSTRUCTIONS.map((inst, i) => (
-                <li key={i}>{inst}</li>
-              ))}
-            </ul>
+          {(showGuidelines || showRawSheet) && (
+            <div className="hl-card rounded-2xl p-4 sm:p-5 space-y-3">
+              {showGuidelines && (
+                <>
+                  <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+                    Mesocycle Progression Guidelines
+                  </h2>
+                  <ul className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1.5 text-xs text-slate-600 dark:text-slate-300 list-disc pl-4">
+                    {SHEET_INSTRUCTIONS.map((inst, i) => (
+                      <li key={i}>{inst}</li>
+                    ))}
+                  </ul>
+                </>
+              )}
 
-            {showRawSheet && rawCsvPreview && (
-              <div className="pt-3 border-t border-slate-200 dark:border-slate-800">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    Source File: Workout_plan_463cf254
-                  </span>
-                  <a
-                    href={ATTACHED_CSV_PATH}
-                    download="Workout_plan.csv"
-                    className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline"
-                  >
-                    Download Original CSV
-                  </a>
+              {showRawSheet && rawCsvPreview && (
+                <div className={showGuidelines ? 'pt-3 border-t border-slate-200 dark:border-slate-800' : ''}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      Source File: Workout_plan_463cf254
+                    </span>
+                    <a
+                      href={ATTACHED_CSV_PATH}
+                      download="Workout_plan.csv"
+                      className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+                    >
+                      Download Original CSV
+                    </a>
+                  </div>
+                  <pre className="p-3 bg-slate-900 text-slate-100 rounded-xl text-[11px] font-mono overflow-x-auto max-h-48">
+                    {rawCsvPreview}
+                  </pre>
                 </div>
-                <pre className="p-3 bg-slate-900 text-slate-100 rounded-xl text-[11px] font-mono overflow-x-auto max-h-48">
-                  {rawCsvPreview}
-                </pre>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            {plan.map((day) => {
+          <div data-testid="workouts-schedule-grid" className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            {effectivePlan.map((day) => {
               const daySets = setLogs.filter(
-                (s) => s.week === activeWeek && s.dayNumber === day.dayNumber
+                (s) =>
+                  !s.templateSessionId &&
+                  s.week === activeWeek &&
+                  s.dayNumber === day.dayNumber
               );
               const completedSets = daySets.filter((s) => s.completed).length;
 
               return (
                 <div
                   key={day.dayNumber}
+                  data-testid={`workout-schedule-day-${day.dayNumber}`}
                   className="hl-card rounded-2xl p-4 sm:p-5 flex flex-col justify-between space-y-4"
                 >
                   <div className="space-y-3">
-                    <div className="flex items-start justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-3">
+                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-3">
                       <div className="min-w-0">
                         <p className="text-xs text-slate-500 dark:text-slate-400 font-mono tabular-nums">
-                          Week {activeWeek} ·{' '}
+                          Day {day.dayNumber} ·{' '}
                           {day.isRestDay
                             ? 'Active Recovery'
                             : `${completedSets}/${daySets.length} sets logged`}
                         </p>
-                        <h2 className="text-lg font-bold text-slate-900 dark:text-white mt-0.5 truncate">
+                        <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white mt-0.5 leading-snug">
                           {day.title}
                         </h2>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                           {day.focusSummary}
                         </p>
                       </div>
 
-                      {!day.isRestDay && (
+                      <div className="flex flex-wrap items-center gap-1.5 sm:shrink-0">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setWorkoutHelpTarget(
+                              buildHelpTargetFromDayPlan(
+                                day,
+                                activeWeek,
+                                MESOCYCLE_WEEKS.find((w) => w.week === activeWeek)?.targetRir
+                              )
+                            )
+                          }
+                          className="no-touch-delay min-h-[40px] px-3 py-1.5 text-xs font-semibold hl-subtle border text-blue-600 dark:text-blue-400 hover:border-blue-500 rounded-xl transition-colors flex items-center gap-1 whitespace-nowrap"
+                          title={`How to perform ${day.title}`}
+                        >
+                          <BookOpen className="w-3.5 h-3.5" />
+                          <span>Workout Help</span>
+                        </button>
+
                         <button
                           type="button"
                           onClick={() => onOpenDayInTracker(day.dayNumber)}
-                          className="min-h-[42px] px-3.5 py-2 bg-slate-900 dark:bg-blue-600 hover:opacity-90 text-white text-xs font-semibold rounded-xl transition-opacity flex items-center gap-1.5 whitespace-nowrap shrink-0"
+                          className={`no-touch-delay min-h-[42px] px-3.5 py-2 text-xs font-semibold rounded-xl transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
+                            day.isRestDay
+                              ? 'hl-subtle border text-slate-700 dark:text-slate-200 hover:border-blue-500'
+                              : 'bg-slate-900 dark:bg-blue-600 hover:opacity-90 text-white'
+                          }`}
                         >
-                          Track Day {day.dayNumber}
+                          {day.isRestDay ? `Open Day ${day.dayNumber}` : `Track Day ${day.dayNumber}`}
                           <ArrowRight className="w-3.5 h-3.5" />
                         </button>
-                      )}
+                      </div>
                     </div>
 
                     {day.isRestDay ? (
-                      <p className="text-xs text-slate-600 dark:text-slate-300 py-4 leading-relaxed">
-                        No resistance training scheduled. You can keep this as recovery or assign a
-                        template to Day {day.dayNumber} from the Workout Templates tab.
+                      <p className="text-xs text-slate-600 dark:text-slate-300 py-2 leading-relaxed">
+                        Scheduled recovery day. Assign a template from the Templates tab if you want
+                        an extra session.
                       </p>
                     ) : (
-                      <div className="divide-y divide-slate-200/70 dark:divide-slate-800">
-                        {day.exercises.map((ex, idx) => {
-                          const isEditing = editingExerciseId === ex.id;
-                          const lm = landmarks[ex.muscleId];
-                          const targetSets = ex.weekSets[activeWeek] ?? 3;
-                          const doneExSets = daySets.filter(
-                            (s) => s.exerciseId === ex.id && s.completed
-                          ).length;
+                      <div>
+                        <button
+                          type="button"
+                          onClick={() => toggleCardExpanded(`day_${day.dayNumber}`)}
+                          className="no-touch-delay min-h-[36px] px-3 py-1 rounded-lg hl-subtle border text-xs font-semibold text-slate-700 dark:text-slate-200 hover:border-slate-400 transition-colors inline-flex items-center gap-1.5 whitespace-nowrap"
+                        >
+                          <span>
+                            {expandedCardIds[`day_${day.dayNumber}`]
+                              ? `Hide Exercises (${day.exercises.length})`
+                              : `Customize ${day.exercises.length} Exercises`}
+                          </span>
+                          {expandedCardIds[`day_${day.dayNumber}`] ? (
+                            <ChevronUp className="w-3.5 h-3.5" />
+                          ) : (
+                            <ChevronDown className="w-3.5 h-3.5" />
+                          )}
+                        </button>
 
-                          return (
-                            <div key={ex.id} className="py-2.5 first:pt-0 last:pb-0">
-                              {isEditing ? (
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <input
-                                    type="text"
-                                    value={draftName}
-                                    onChange={(e) => setDraftName(e.target.value)}
-                                    className="flex-1 min-w-[150px] min-h-[38px] px-2.5 py-1 text-xs font-medium hl-input rounded-lg"
-                                    aria-label="Exercise name"
-                                  />
-                                  <input
-                                    type="text"
-                                    value={draftRepRange}
-                                    onChange={(e) => setDraftRepRange(e.target.value)}
-                                    className="w-20 min-h-[38px] px-2 py-1 text-xs font-mono hl-input rounded-lg"
-                                    placeholder="8-12"
-                                    aria-label="Rep range"
-                                  />
-                                  <button
-                                    type="button"
-                                    onClick={() => handleCommitEditScheduleExercise(day, ex.id)}
-                                    className="min-h-[38px] min-w-[38px] flex items-center justify-center rounded-lg bg-blue-600 text-white"
-                                    aria-label="Save exercise edit"
-                                  >
-                                    <Check className="w-3.5 h-3.5" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setEditingExerciseId(null)}
-                                    className="min-h-[38px] min-w-[38px] flex items-center justify-center rounded-lg hl-subtle border text-slate-600 dark:text-slate-300"
-                                    aria-label="Cancel exercise edit"
-                                  >
-                                    <X className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              ) : (
-                                <div className="flex items-center justify-between gap-3">
-                                  <div className="min-w-0">
-                                    <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">
-                                      <span className="font-mono tabular-nums text-xs text-slate-400 dark:text-slate-500 mr-1.5">
-                                        {idx + 1}.
-                                      </span>
-                                      {ex.name}
-                                    </p>
-                                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-mono tabular-nums truncate">
-                                      {lm?.shortName} · {doneExSets}/{targetSets} sets ·{' '}
-                                      {ex.repRange} reps
-                                      {ex.restSeconds ? ` · ${ex.restSeconds}s` : ''}
-                                      {ex.isSuperset ? ' · Superset' : ''}
-                                    </p>
-                                  </div>
+                        {expandedCardIds[`day_${day.dayNumber}`] && (
+                          <div className="mt-3 divide-y divide-slate-200/70 dark:divide-slate-800">
+                            {day.exercises.map((ex, idx) => {
+                              const isEditing = editingExerciseId === ex.id;
+                              const lm = landmarks[ex.muscleId];
+                              const targetSets = ex.weekSets[activeWeek] ?? 3;
+                              const doneExSets = daySets.filter(
+                                (s) => s.exerciseId === ex.id && s.completed
+                              ).length;
 
-                                  <button
-                                    type="button"
-                                    onClick={() => handleStartEditScheduleExercise(ex)}
-                                    className="min-h-[38px] min-w-[38px] flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shrink-0"
-                                    title="Swap exercise name or rep range"
-                                    aria-label={`Swap ${ex.name}`}
-                                  >
-                                    <Edit3 className="w-3.5 h-3.5" />
-                                  </button>
+                              return (
+                                <div key={ex.id} className="py-2.5 first:pt-0 last:pb-0">
+                                  {isEditing ? (
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <input
+                                        type="text"
+                                        value={draftName}
+                                        onChange={(e) => setDraftName(e.target.value)}
+                                        className="flex-1 min-w-[150px] min-h-[38px] px-2.5 py-1 text-xs font-medium hl-input rounded-lg"
+                                        aria-label="Exercise name"
+                                      />
+                                      <input
+                                        type="text"
+                                        value={draftRepRange}
+                                        onChange={(e) => setDraftRepRange(e.target.value)}
+                                        className="w-20 min-h-[38px] px-2 py-1 text-xs font-mono hl-input rounded-lg"
+                                        placeholder="8-12"
+                                        aria-label="Rep range"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => handleCommitEditScheduleExercise(day, ex.id)}
+                                        className="no-touch-delay min-h-[38px] min-w-[38px] flex items-center justify-center rounded-lg bg-sky-600 text-white"
+                                        aria-label="Save exercise edit"
+                                      >
+                                        <Check className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setEditingExerciseId(null)}
+                                        className="no-touch-delay min-h-[38px] min-w-[38px] flex items-center justify-center rounded-lg hl-subtle border text-slate-600 dark:text-slate-300"
+                                        aria-label="Cancel exercise edit"
+                                      >
+                                        <X className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <div className="flex items-center justify-between gap-3">
+                                      <div className="min-w-0">
+                                        <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">
+                                          <span className="font-mono tabular-nums text-xs text-slate-400 dark:text-slate-500 mr-1.5">
+                                            {idx + 1}.
+                                          </span>
+                                          {ex.name}
+                                        </p>
+                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-mono tabular-nums truncate">
+                                          {lm?.shortName} · {doneExSets}/{targetSets} sets ·{' '}
+                                          {ex.repRange} reps
+                                          {ex.restSeconds ? ` · ${ex.restSeconds}s` : ''}
+                                          {ex.isSuperset ? ' · Superset' : ''}
+                                        </p>
+                                      </div>
+
+                                      <button
+                                        type="button"
+                                        onClick={() => handleStartEditScheduleExercise(ex)}
+                                        className="no-touch-delay min-h-[38px] min-w-[38px] flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shrink-0"
+                                        title="Swap exercise name or rep range"
+                                        aria-label={`Swap ${ex.name}`}
+                                      >
+                                        <Edit3 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  )}
                                 </div>
-                              )}
-                            </div>
-                          );
-                        })}
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -743,10 +1084,10 @@ export const Page3Workouts: React.FC<Page3WorkoutsProps> = ({
                         setPickerTargetDayNumber(day.dayNumber);
                         setIsPickerOpen(true);
                       }}
-                      className="min-h-[40px] px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors flex items-center gap-1.5"
+                      className="no-touch-delay min-h-[40px] px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors flex items-center gap-1.5 whitespace-nowrap"
                     >
                       <Plus className="w-3.5 h-3.5" />
-                      Add Exercise from Library
+                      <span>Add Movement from Library</span>
                     </button>
                   </div>
                 </div>
@@ -754,6 +1095,29 @@ export const Page3Workouts: React.FC<Page3WorkoutsProps> = ({
             })}
           </div>
         </div>
+      )}
+
+      {/* SUB-TAB 0: WORKOUT CALENDAR & HISTORICAL LOGBOOK */}
+      {subTab === 'calendar' && (
+        <WorkoutCalendar
+          setLogs={setLogs}
+          workoutHistory={workoutHistory}
+          plan={effectivePlan}
+          templates={effectiveTemplates}
+          exerciseLibrary={exerciseLibrary}
+          landmarks={landmarks}
+          nutritionByDate={nutritionByDate}
+          weightUnit={weightUnit}
+          streakDays={streakDays}
+          bestStreakDays={bestStreakDays}
+          activeStandaloneSession={activeStandaloneSession}
+          onSaveHistoryRecord={onSaveHistoryRecord}
+          onLogPastWorkout={onLogPastWorkout}
+          onDeleteManualHistoryRecord={onDeleteManualHistoryRecord}
+          onCreateCustomExercise={onCreateCustomExercise}
+          onRepeatWorkout={onRepeatWorkout}
+          onReturnToLiveTracker={onReturnToLiveTracker}
+        />
       )}
 
       {/* TEMPLATE BUILDER / CUSTOMIZER MODAL */}
@@ -780,7 +1144,7 @@ export const Page3Workouts: React.FC<Page3WorkoutsProps> = ({
               <button
                 type="button"
                 onClick={() => setIsEditorOpen(false)}
-                className="min-h-[40px] min-w-[40px] rounded-xl flex items-center justify-center text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800"
+                className="no-touch-delay min-h-[40px] min-w-[40px] rounded-xl flex items-center justify-center text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800"
                 aria-label="Close template editor"
               >
                 <X className="w-5 h-5" />
@@ -789,7 +1153,7 @@ export const Page3Workouts: React.FC<Page3WorkoutsProps> = ({
 
             <div className="p-5 sm:p-6 overflow-y-auto space-y-5 flex-1">
               {editorError && (
-                <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-800 text-xs font-semibold text-red-700 dark:text-red-300">
+                <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 text-xs font-semibold text-amber-800 dark:text-amber-200">
                   {editorError}
                 </div>
               )}
@@ -797,7 +1161,7 @@ export const Page3Workouts: React.FC<Page3WorkoutsProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <label className="sm:col-span-2 block">
                   <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    Template Name *
+                    Routine Name *
                   </span>
                   <input
                     type="text"
@@ -807,7 +1171,7 @@ export const Page3Workouts: React.FC<Page3WorkoutsProps> = ({
                       setEditorTemplate({ ...editorTemplate, name: e.target.value })
                     }
                     placeholder="e.g. Upper Push & Lateral Delts"
-                    className="mt-1 w-full min-h-[42px] px-3.5 py-2 text-sm font-medium hl-input rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600"
+                    className="mt-1 w-full min-h-[42px] px-3.5 py-2 text-sm font-medium hl-input rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-600"
                   />
                 </label>
 
@@ -841,7 +1205,7 @@ export const Page3Workouts: React.FC<Page3WorkoutsProps> = ({
                   onChange={(e) =>
                     setEditorTemplate({ ...editorTemplate, description: e.target.value })
                   }
-                  placeholder="Optional goal or coaching notes for this template..."
+                  placeholder="Optional goal or coaching notes for this routine..."
                   className="mt-1 w-full min-h-[40px] px-3.5 py-1.5 text-xs hl-input rounded-xl"
                 />
               </label>
@@ -849,7 +1213,7 @@ export const Page3Workouts: React.FC<Page3WorkoutsProps> = ({
               <div className="space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                    Template Exercises ({editorTemplate.exercises.length})
+                    Movements ({editorTemplate.exercises.length})
                   </h3>
                   <button
                     type="button"
@@ -857,17 +1221,17 @@ export const Page3Workouts: React.FC<Page3WorkoutsProps> = ({
                       setPickerTargetDayNumber(null);
                       setIsPickerOpen(true);
                     }}
-                    className="min-h-[40px] px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-xl flex items-center gap-1.5"
+                    className="no-touch-delay min-h-[40px] px-3.5 py-1.5 bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold rounded-xl flex items-center gap-1.5 whitespace-nowrap"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    Add Exercise from Library
+                    <span>Add Movement from Library</span>
                   </button>
                 </div>
 
                 {editorTemplate.exercises.length === 0 ? (
                   <div className="p-8 border border-dashed border-slate-300 dark:border-slate-700 rounded-2xl text-center space-y-2">
                     <p className="text-xs text-slate-500 dark:text-slate-400">
-                      No exercises added yet. Browse the Exercise Library to add movements and
+                      No movements added yet. Browse the Movement Library to add exercises and
                       configure sets, reps, and rest times.
                     </p>
                     <button
@@ -876,10 +1240,10 @@ export const Page3Workouts: React.FC<Page3WorkoutsProps> = ({
                         setPickerTargetDayNumber(null);
                         setIsPickerOpen(true);
                       }}
-                      className="min-h-[38px] px-4 py-1.5 text-xs font-semibold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 rounded-lg inline-flex items-center gap-1.5"
+                      className="no-touch-delay min-h-[38px] px-4 py-1.5 text-xs font-semibold text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-950/60 hover:bg-sky-100 rounded-lg inline-flex items-center gap-1.5 whitespace-nowrap"
                     >
                       <Plus className="w-3.5 h-3.5" />
-                      Browse Exercise Library
+                      <span>Browse Movement Library</span>
                     </button>
                   </div>
                 ) : (
@@ -895,7 +1259,7 @@ export const Page3Workouts: React.FC<Page3WorkoutsProps> = ({
                               type="button"
                               disabled={idx === 0}
                               onClick={() => moveEditorItem(idx, -1)}
-                              className="p-1 text-slate-400 hover:text-slate-900 dark:hover:text-white disabled:opacity-30"
+                              className="no-touch-delay p-1 text-slate-400 hover:text-slate-900 dark:hover:text-white disabled:opacity-30"
                               aria-label="Move exercise up"
                             >
                               <ArrowUp className="w-3.5 h-3.5" />
@@ -904,7 +1268,7 @@ export const Page3Workouts: React.FC<Page3WorkoutsProps> = ({
                               type="button"
                               disabled={idx === editorTemplate.exercises.length - 1}
                               onClick={() => moveEditorItem(idx, 1)}
-                              className="p-1 text-slate-400 hover:text-slate-900 dark:hover:text-white disabled:opacity-30"
+                              className="no-touch-delay p-1 text-slate-400 hover:text-slate-900 dark:hover:text-white disabled:opacity-30"
                               aria-label="Move exercise down"
                             >
                               <ArrowDown className="w-3.5 h-3.5" />
@@ -983,7 +1347,7 @@ export const Page3Workouts: React.FC<Page3WorkoutsProps> = ({
                           <button
                             type="button"
                             onClick={() => removeEditorItem(item.id)}
-                            className="min-h-[38px] min-w-[38px] flex items-center justify-center rounded-lg text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40"
+                            className="no-touch-delay min-h-[38px] min-w-[38px] flex items-center justify-center rounded-lg text-slate-400 hover:text-amber-700 dark:hover:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/40"
                             aria-label={`Remove ${item.name}`}
                           >
                             <Trash2 className="w-4 h-4" />
@@ -1006,16 +1370,16 @@ export const Page3Workouts: React.FC<Page3WorkoutsProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsEditorOpen(false)}
-                  className="min-h-[42px] px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hl-card rounded-xl hover:opacity-80"
+                  className="no-touch-delay min-h-[42px] px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hl-card rounded-xl hover:opacity-80 whitespace-nowrap"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="min-h-[42px] px-5 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-500 rounded-xl flex items-center gap-1.5"
+                  className="no-touch-delay min-h-[42px] px-5 py-2 text-xs font-semibold text-white bg-sky-600 hover:bg-sky-500 rounded-xl flex items-center gap-1.5 whitespace-nowrap"
                 >
                   <Check className="w-4 h-4" />
-                  Save Template
+                  <span>Save Routine</span>
                 </button>
               </div>
             </div>
@@ -1032,6 +1396,7 @@ export const Page3Workouts: React.FC<Page3WorkoutsProps> = ({
         exercises={exerciseLibrary}
         landmarks={landmarks}
         onSelectExercise={handlePickerSelect}
+        onCreateCustomExercise={onCreateCustomExercise}
         alreadySelectedIds={
           pickerTargetDayNumber === null && editorTemplate
             ? editorTemplate.exercises.map((e) => e.libraryExerciseId)
@@ -1042,6 +1407,14 @@ export const Page3Workouts: React.FC<Page3WorkoutsProps> = ({
             ? `Add Exercise to Day ${pickerTargetDayNumber}`
             : 'Add Exercises to Template'
         }
+      />
+
+      <WorkoutHelpModal
+        isOpen={Boolean(workoutHelpTarget)}
+        target={workoutHelpTarget}
+        exerciseLibrary={exerciseLibrary}
+        landmarks={landmarks}
+        onClose={() => setWorkoutHelpTarget(null)}
       />
     </div>
   );

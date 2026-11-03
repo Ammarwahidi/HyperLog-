@@ -1,0 +1,21 @@
+{
+  "appName": "HyperLog",
+  "packageId": "com.hyperlog.rp",
+  "version": "4.0.0",
+  "versionCode": 14,
+  "uiArchitecture": "Claymorphism 3D Pastel, Pastel Glass & Midnight Clay",
+  "dayZeroCleanSlate": true,
+  "minSdk": 26,
+  "targetSdk": 35,
+  "apkFileName": "HyperLog-v4.0-claymorphism-release.apk",
+  "apkUrl": "/api/download/apk/v4.0/HyperLog-v4.0-claymorphism-release.apk",
+  "bundleFileName": "HyperLog-v4.0-Phone-Install-Bundle.zip",
+  "bundleUrl": "/api/download/bundle/v4.0/HyperLog-v4.0-Phone-Install-Bundle.zip",
+  "sourceZipFileName": "HyperLog-v4.0-AndroidStudio-Source.zip",
+  "sourceZipUrl": "/api/download/source-zip/v4.0/HyperLog-v4.0-AndroidStudio-Source.zip",
+  "sizeBytes": 1404257,
+  "bundleBytes": 1396988,
+  "sourceZipBytes": 1455338,
+  "sha256": "d7d8732561ef43ffa32404e8efe3adca31dcb314ca477e4b969d9a77b0f4abba",
+  "builtAt": "2026-11-02T03:58:01Z"
+}

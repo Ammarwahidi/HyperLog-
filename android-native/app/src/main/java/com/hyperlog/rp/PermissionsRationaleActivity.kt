@@ -4,6 +4,11 @@ import android.app.Activity
 import android.os.Bundle
 import android.widget.LinearLayout
 
+/**
+ * Privacy Explanation Screen for Android Health Connect:
+ * When a user taps "Privacy Policy" inside Android's Health Connect settings, Android opens
+ * this screen so the user can read in plain language how HyperLog keeps their data safe on-device.
+ */
 class PermissionsRationaleActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
