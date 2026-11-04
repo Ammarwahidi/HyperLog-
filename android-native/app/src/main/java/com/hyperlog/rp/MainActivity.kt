@@ -32,7 +32,7 @@ import java.nio.charset.StandardCharsets
 import java.time.Instant
 
 /**
- * MainActivity — Unified Web & Standalone Native Android Shell (v4.0.0 · Build 16)
+ * MainActivity — Unified Web & Standalone Native Android Shell (v4.0.0 · Build 18)
  *
  * Serves the exact compiled React + Tailwind CSS Web UI 100% offline from APK
  * `assets/webapp/` over `https://app.hyperlog.local/` so every single page
@@ -62,7 +62,7 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
 
         db = HyperLogDatabase.getInstance(applicationContext)
-        HyperLogStorageManager.ensureStartupPackageInstalled(applicationContext, db)
+        HyperLogStorageManager.ensureDirectories(applicationContext)
 
         pendingWidgetTab = intent?.getStringExtra(HyperLogStreakWidgetProvider.EXTRA_TARGET_TAB)
 
@@ -83,6 +83,7 @@ class MainActivity : Activity() {
                 FrameLayout.LayoutParams.MATCH_PARENT
             )
             setBackgroundColor(Color.TRANSPARENT)
+            setLayerType(View.LAYER_TYPE_HARDWARE, null)
             overScrollMode = View.OVER_SCROLL_NEVER
             isVerticalScrollBarEnabled = false
             isHorizontalScrollBarEnabled = false
@@ -324,7 +325,7 @@ class MainActivity : Activity() {
                         .put("ok", true)
                         .put("mode", "android-standalone")
                         .put("version", "4.0.0")
-                        .put("versionCode", 16)
+                        .put("versionCode", 18)
                         .toString()
                 )
 
@@ -346,7 +347,7 @@ class MainActivity : Activity() {
                                 .put("appName", "HyperLog")
                                 .put("packageId", "com.hyperlog.rp")
                                 .put("version", "4.0.0")
-                                .put("versionCode", 16)
+                                .put("versionCode", 18)
                                 .toString()
                         )
                     }
@@ -418,12 +419,17 @@ class MainActivity : Activity() {
                 null
             }
 
+            val isImmutableAsset = resolvedPath.startsWith("assets/") &&
+                (resolvedPath.endsWith(".js") || resolvedPath.endsWith(".css") ||
+                    resolvedPath.endsWith(".woff2") || resolvedPath.endsWith(".png") ||
+                    resolvedPath.endsWith(".webp") || resolvedPath.endsWith(".svg"))
+
             return WebResourceResponse(
                 mime,
                 encoding,
                 200,
                 "OK",
-                defaultHeaders(),
+                if (isImmutableAsset) immutableAssetHeaders() else defaultHeaders(),
                 assetStream
             )
         }
@@ -454,6 +460,11 @@ class MainActivity : Activity() {
             "Cache-Control" to "no-store"
         )
 
+        private fun immutableAssetHeaders(): Map<String, String> = mapOf(
+            "Access-Control-Allow-Origin" to "*",
+            "Cache-Control" to "public, max-age=31536000, immutable"
+        )
+
         private fun jsonResponse(statusCode: Int, body: String): WebResourceResponse {
             val bytes = body.toByteArray(StandardCharsets.UTF_8)
             return WebResourceResponse(
@@ -477,7 +488,7 @@ class MainActivity : Activity() {
             return JSONObject()
                 .put("packageId", activity.packageName)
                 .put("versionName", "4.0.0")
-                .put("versionCode", 16)
+                .put("versionCode", 18)
                 .put("healthConnectInstalled", NativeHardwareBridge.isHealthConnectInstalled(activity))
                 .toString()
         }

@@ -312,7 +312,7 @@ export const IndianCatalogExplorerSection: React.FC<IndianCatalogExplorerSection
               <div
                 key={recipe.id}
                 data-testid={`indian-catalog-item-${recipe.id}`}
-                className="p-4 rounded-2xl hl-subtle border flex flex-col justify-between gap-3"
+                className="p-4 rounded-2xl hl-subtle hl-cv-card border flex flex-col justify-between gap-3"
               >
                 <div className="space-y-2">
                   <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400">

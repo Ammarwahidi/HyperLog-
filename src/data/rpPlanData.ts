@@ -281,10 +281,10 @@ export const DEFAULT_MUSCLE_LANDMARKS: Record<MuscleId, MuscleLandmark> = {
 };
 
 /**
- * Exact 7-Day Workout Plan parsed from /public/assets/aistudio/Workout_plan_463cf254
+ * Complete 7-Day RP Hypertrophy Mesocycle Split preserved for selectable Workout Templates.
  * Set progressions scale from Week 1 (MEV) -> Week 4 (MAV/MRV) -> Week 5 (Deload).
  */
-export const INITIAL_WORKOUT_PLAN: WorkoutDayPlan[] = [
+export const RP_HYPERTROPHY_SPLIT_DAYS: WorkoutDayPlan[] = [
   {
     dayNumber: 1,
     title: 'Day 1 · Upper Push & Arm/Delt Volume',
@@ -774,6 +774,18 @@ export const INITIAL_WORKOUT_PLAN: WorkoutDayPlan[] = [
   },
 ];
 
+/**
+ * Clean un-preloaded 7-day schedule at Day Zero.
+ * No movements are preloaded onto Tracker; users choose a custom workout or select any template.
+ */
+export const INITIAL_WORKOUT_PLAN: WorkoutDayPlan[] = [1, 2, 3, 4, 5, 6, 7].map((dayNumber) => ({
+  dayNumber,
+  title: `Day ${dayNumber} · Open Session`,
+  focusSummary: 'No preloaded exercises — start a workout of your choice or select a template',
+  isRestDay: false,
+  exercises: [],
+}));
+
 export function evaluateVolumeZone(sets: number, landmark: MuscleLandmark): VolumeZone {
   if (sets >= landmark.mrv) {
     return VolumeZone.Overreaching;
@@ -806,49 +818,49 @@ export const VOLUME_ZONE_META: Record<
   }
 > = {
   [VolumeZone.BelowMV]: {
-    label: 'Below MV (Unstimulated)',
-    shortLabel: 'Below MV',
+    label: 'Rested · Ready to Train',
+    shortLabel: 'Rested',
     svgFill: '#94A3B8',
     svgStroke: '#64748B',
     barColor: 'bg-slate-400 dark:bg-slate-500',
     textColor: 'text-slate-600 dark:text-slate-400',
-    description: 'Below weekly Maintenance Volume; log planned sessions to stimulate retention and growth.',
+    description: 'Fresh and well-rested — ready whenever you start your next planned session.',
   },
   [VolumeZone.Maintenance]: {
-    label: 'MV–MEV (Maintenance)',
-    shortLabel: 'MV–MEV',
+    label: 'Gentle Maintenance',
+    shortLabel: 'Maintaining',
     svgFill: '#38BDF8',
     svgStroke: '#0284C7',
     barColor: 'bg-sky-500',
     textColor: 'text-sky-700 dark:text-sky-400',
-    description: 'Preserves existing muscle tissue (ideal for Week 5 Deload or resensitization phases).',
+    description: 'Comfortably preserving existing strength and muscle (ideal for light or deload weeks).',
   },
   [VolumeZone.Productive]: {
-    label: 'MEV–MAV (Hypertrophy)',
-    shortLabel: 'MEV–MAV',
+    label: 'Steady Growth',
+    shortLabel: 'Steady Growth',
     svgFill: '#34D399',
     svgStroke: '#059669',
     barColor: 'bg-emerald-500',
     textColor: 'text-emerald-700 dark:text-emerald-400',
-    description: 'Above Minimum Effective Volume; actively stimulating measurable myofibrillar hypertrophy.',
+    description: 'Building steadily above your minimum effective volume without excess fatigue.',
   },
   [VolumeZone.OptimalMAV]: {
-    label: 'MAV Window (Peak Growth)',
-    shortLabel: 'Optimal MAV',
-    svgFill: '#3B82F6',
-    svgStroke: '#1D4ED8',
-    barColor: 'bg-blue-600 dark:bg-blue-500',
-    textColor: 'text-blue-700 dark:text-blue-400',
-    description: 'Directly inside Maximum Adaptive Volume sweet spot for peak weekly gains.',
+    label: 'Sweet Spot · Peak Balance',
+    shortLabel: 'Sweet Spot',
+    svgFill: '#14B8A6',
+    svgStroke: '#0D9488',
+    barColor: 'bg-teal-500 dark:bg-teal-400',
+    textColor: 'text-teal-700 dark:text-teal-400',
+    description: 'Right inside your weekly sweet spot for comfortable, sustainable progress.',
   },
   [VolumeZone.Overreaching]: {
-    label: 'At/Above MRV (Overreaching)',
-    shortLabel: '≥ MRV',
+    label: 'Ready to Rest',
+    shortLabel: 'Ready to Rest',
     svgFill: '#F59E0B',
     svgStroke: '#B45309',
     barColor: 'bg-amber-500',
     textColor: 'text-amber-700 dark:text-amber-400',
-    description: 'Approaching or exceeding Maximum Recoverable Volume; deload soon if performance drops.',
+    description: 'Plenty of stimulus logged this week — prioritize sleep, hydration, and recovery.',
   },
 };
 

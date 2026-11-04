@@ -1,0 +1,19 @@
+{
+  "schema": "HyperLog-Telemetry-Archive-v4.0",
+  "createdAt": "2026-11-04T19:59:41.845Z",
+  "entriesCount": 1,
+  "entries": [
+    {
+      "id": "pw_evt_1793822381795",
+      "timestampIso": "2026-11-04T19:59:41.795Z",
+      "dayZeroOffsetMinutes": 0,
+      "level": "METRIC",
+      "category": "startup",
+      "event": "E2E_FIRST10_HYDRATION_VERIFIED",
+      "durationMs": 12,
+      "metadata": {
+        "suite": "playwright"
+      }
+    }
+  ]
+}

@@ -197,7 +197,7 @@ const THEME_CARDS: Array<{
 
 const REST_PRESET_SECONDS = [60, 90, 120, 150, 180, 240];
 
-export const PageSettings: React.FC<PageSettingsProps> = ({
+export const PageSettings: React.FC<PageSettingsProps> = React.memo(({
   theme,
   onChangeTheme,
   weightUnit,
@@ -335,11 +335,11 @@ export const PageSettings: React.FC<PageSettingsProps> = ({
     return `${Math.round(tonnageKg * 2.20462).toLocaleString()} lb`;
   };
 
-  const handleDownloadAllDataPdf = () => {
+  const handleDownloadAllDataPdf = async () => {
     if (exportingHistoryPdf || derivedHistory.allRecords.length === 0) return;
     setExportingHistoryPdf(true);
     try {
-      const pdfBlob = generateFullHistoryPdfBlob({
+      const pdfBlob = await generateFullHistoryPdfBlob({
         records: derivedHistory.allRecords,
         landmarks,
         weightUnit,
@@ -362,7 +362,7 @@ export const PageSettings: React.FC<PageSettingsProps> = ({
     if (sharingHistoryPdf || derivedHistory.allRecords.length === 0) return;
     setSharingHistoryPdf(true);
     try {
-      const pdfBlob = generateFullHistoryPdfBlob({
+      const pdfBlob = await generateFullHistoryPdfBlob({
         records: derivedHistory.allRecords,
         landmarks,
         weightUnit,
@@ -1951,14 +1951,18 @@ export const PageSettings: React.FC<PageSettingsProps> = ({
               <img
                 src="/pwa-192x192.png"
                 alt="HyperLog vibrant dumbbell flame crest"
+                width={56}
+                height={56}
+                loading="lazy"
+                decoding="async"
                 referrerPolicy="no-referrer"
                 className="w-14 h-14 rounded-2xl shrink-0 object-cover border border-slate-700/40"
               />
               <div className="min-w-0">
                 <h2 className="text-base font-bold text-slate-900 dark:text-white">
                   {isRunningInAndroidStandaloneApk()
-                    ? 'Native Android Standalone App Active (v4.0.0 · Build 16)'
-                    : 'Run HyperLog on Your Phone (v4.0.0 · Build 16)'}
+                    ? 'Native Android Standalone App Active (v4.0.0 · Build 18)'
+                    : 'Run HyperLog on Your Phone (v4.0.0 · Build 18)'}
                 </h2>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 break-all sm:break-normal">
                   {isRunningInAndroidStandaloneApk()
@@ -2057,4 +2061,5 @@ export const PageSettings: React.FC<PageSettingsProps> = ({
       </div>
     </div>
   );
-};
+});
+PageSettings.displayName = 'PageSettings';

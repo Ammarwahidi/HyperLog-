@@ -1,1 +1,650 @@
-[]
+[
+  {
+    "id": "log_1793822453385_46r3t",
+    "timestampIso": "2026-11-04T20:00:53.385Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "METRIC",
+    "category": "startup",
+    "event": "PHASE1_DB_FAST_HYDRATION",
+    "durationMs": 214.6,
+    "metadata": {
+      "namespace": "guest",
+      "initialLimit": 10
+    }
+  },
+  {
+    "id": "log_day0_1793822453385",
+    "timestampIso": "2026-11-04T20:00:53.374Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "INFO",
+    "category": "startup",
+    "event": "DAY_ZERO_CLEAN_SLATE_INITIALIZED",
+    "metadata": {
+      "vaultNamespace": "guest",
+      "legacyTestDataRemoved": true,
+      "ringBufferCap": 500
+    }
+  },
+  {
+    "id": "log_1793822453468_mjuzf",
+    "timestampIso": "2026-11-04T20:00:53.468Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "METRIC",
+    "category": "startup",
+    "event": "PHASE2_IDLE_CATALOG_HYDRATION",
+    "durationMs": 4.7
+  },
+  {
+    "id": "log_1793822450744_t1rab",
+    "timestampIso": "2026-11-04T20:00:50.744Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "ACTION",
+    "category": "workout",
+    "event": "WORKING_SET_COMPLETED",
+    "metadata": {
+      "exercise": "Barbell Bench Press",
+      "weightKg": 70,
+      "reps": 6,
+      "rir": 3
+    }
+  },
+  {
+    "id": "log_1793822450296_4tqg6",
+    "timestampIso": "2026-11-04T20:00:50.296Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "ACTION",
+    "category": "workout",
+    "event": "WORKING_SET_COMPLETED",
+    "metadata": {
+      "exercise": "Barbell Bench Press",
+      "weightKg": 65,
+      "reps": 6,
+      "rir": 3
+    }
+  },
+  {
+    "id": "log_1793822449752_5fz8q",
+    "timestampIso": "2026-11-04T20:00:49.752Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "ACTION",
+    "category": "workout",
+    "event": "WORKING_SET_COMPLETED",
+    "metadata": {
+      "exercise": "Barbell Bench Press",
+      "weightKg": 60,
+      "reps": 6,
+      "rir": 3
+    }
+  },
+  {
+    "id": "log_1793822446407_wovmf",
+    "timestampIso": "2026-11-04T20:00:46.407Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "METRIC",
+    "category": "startup",
+    "event": "PHASE1_DB_FAST_HYDRATION",
+    "durationMs": 157.8,
+    "metadata": {
+      "namespace": "guest",
+      "initialLimit": 10
+    }
+  },
+  {
+    "id": "log_day0_1793822446407",
+    "timestampIso": "2026-11-04T20:00:46.395Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "INFO",
+    "category": "startup",
+    "event": "DAY_ZERO_CLEAN_SLATE_INITIALIZED",
+    "metadata": {
+      "vaultNamespace": "guest",
+      "legacyTestDataRemoved": true,
+      "ringBufferCap": 500
+    }
+  },
+  {
+    "id": "log_1793822446485_cd24l",
+    "timestampIso": "2026-11-04T20:00:46.485Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "METRIC",
+    "category": "startup",
+    "event": "PHASE2_IDLE_CATALOG_HYDRATION",
+    "durationMs": 12.1
+  },
+  {
+    "id": "log_1793822443379_y5a4n",
+    "timestampIso": "2026-11-04T20:00:43.379Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "ACTION",
+    "category": "workout",
+    "event": "WORKING_SET_COMPLETED",
+    "metadata": {
+      "exercise": "Barbell Bench Press",
+      "weightKg": 85,
+      "reps": 6,
+      "rir": 3
+    }
+  },
+  {
+    "id": "log_1793822443048_va8bv",
+    "timestampIso": "2026-11-04T20:00:43.048Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "ACTION",
+    "category": "workout",
+    "event": "WORKING_SET_COMPLETED",
+    "metadata": {
+      "exercise": "Barbell Bench Press",
+      "weightKg": 85,
+      "reps": 6,
+      "rir": 3
+    }
+  },
+  {
+    "id": "log_1793822441446_vxrg8",
+    "timestampIso": "2026-11-04T20:00:41.446Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "ACTION",
+    "category": "workout",
+    "event": "WORKING_SET_COMPLETED",
+    "metadata": {
+      "exercise": "Barbell Bench Press",
+      "weightKg": 85,
+      "reps": 6,
+      "rir": 3
+    }
+  },
+  {
+    "id": "log_1793822437768_ddwla",
+    "timestampIso": "2026-11-04T20:00:37.768Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "METRIC",
+    "category": "startup",
+    "event": "PHASE1_DB_FAST_HYDRATION",
+    "durationMs": 224.1,
+    "metadata": {
+      "namespace": "guest",
+      "initialLimit": 10
+    }
+  },
+  {
+    "id": "log_day0_1793822437769",
+    "timestampIso": "2026-11-04T20:00:37.759Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "INFO",
+    "category": "startup",
+    "event": "DAY_ZERO_CLEAN_SLATE_INITIALIZED",
+    "metadata": {
+      "vaultNamespace": "guest",
+      "legacyTestDataRemoved": true,
+      "ringBufferCap": 500
+    }
+  },
+  {
+    "id": "log_1793822437852_4j339",
+    "timestampIso": "2026-11-04T20:00:37.852Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "METRIC",
+    "category": "startup",
+    "event": "PHASE2_IDLE_CATALOG_HYDRATION",
+    "durationMs": 4.7
+  },
+  {
+    "id": "log_1793822434842_kfonx",
+    "timestampIso": "2026-11-04T20:00:34.842Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "ACTION",
+    "category": "navigation",
+    "event": "PRIMARY_TAB_SELECTED",
+    "metadata": {
+      "tab": "calories"
+    }
+  },
+  {
+    "id": "log_1793822434552_0xvzc",
+    "timestampIso": "2026-11-04T20:00:34.552Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "ACTION",
+    "category": "navigation",
+    "event": "PRIMARY_TAB_SELECTED",
+    "metadata": {
+      "tab": "library"
+    }
+  },
+  {
+    "id": "log_1793822434004_uvbnk",
+    "timestampIso": "2026-11-04T20:00:34.004Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "ACTION",
+    "category": "navigation",
+    "event": "PRIMARY_TAB_SELECTED",
+    "metadata": {
+      "tab": "workouts"
+    }
+  },
+  {
+    "id": "log_1793822433496_1x4ow",
+    "timestampIso": "2026-11-04T20:00:33.496Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "ACTION",
+    "category": "navigation",
+    "event": "PRIMARY_TAB_SELECTED",
+    "metadata": {
+      "tab": "anatomy"
+    }
+  },
+  {
+    "id": "log_1793822430088_d7xl8",
+    "timestampIso": "2026-11-04T20:00:30.088Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "METRIC",
+    "category": "startup",
+    "event": "PHASE1_DB_FAST_HYDRATION",
+    "durationMs": 167.5,
+    "metadata": {
+      "namespace": "guest",
+      "initialLimit": 10
+    }
+  },
+  {
+    "id": "log_day0_1793822430088",
+    "timestampIso": "2026-11-04T20:00:30.077Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "INFO",
+    "category": "startup",
+    "event": "DAY_ZERO_CLEAN_SLATE_INITIALIZED",
+    "metadata": {
+      "vaultNamespace": "guest",
+      "legacyTestDataRemoved": true,
+      "ringBufferCap": 500
+    }
+  },
+  {
+    "id": "log_1793822430198_3xpwt",
+    "timestampIso": "2026-11-04T20:00:30.198Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "METRIC",
+    "category": "startup",
+    "event": "PHASE2_IDLE_CATALOG_HYDRATION",
+    "durationMs": 3.7
+  },
+  {
+    "id": "log_1793822426927_ni4h6",
+    "timestampIso": "2026-11-04T20:00:26.927Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "ACTION",
+    "category": "navigation",
+    "event": "PRIMARY_TAB_SELECTED",
+    "metadata": {
+      "tab": "settings"
+    }
+  },
+  {
+    "id": "log_1793822423948_pal7v",
+    "timestampIso": "2026-11-04T20:00:23.948Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "METRIC",
+    "category": "startup",
+    "event": "PHASE1_DB_FAST_HYDRATION",
+    "durationMs": 205.9,
+    "metadata": {
+      "namespace": "guest",
+      "initialLimit": 10
+    }
+  },
+  {
+    "id": "log_day0_1793822423949",
+    "timestampIso": "2026-11-04T20:00:23.937Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "INFO",
+    "category": "startup",
+    "event": "DAY_ZERO_CLEAN_SLATE_INITIALIZED",
+    "metadata": {
+      "vaultNamespace": "guest",
+      "legacyTestDataRemoved": true,
+      "ringBufferCap": 500
+    }
+  },
+  {
+    "id": "log_1793822424036_5mpko",
+    "timestampIso": "2026-11-04T20:00:24.036Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "METRIC",
+    "category": "startup",
+    "event": "PHASE2_IDLE_CATALOG_HYDRATION",
+    "durationMs": 28.1
+  },
+  {
+    "id": "log_1793822418100_utezy",
+    "timestampIso": "2026-11-04T20:00:18.100Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "METRIC",
+    "category": "startup",
+    "event": "PHASE1_DB_FAST_HYDRATION",
+    "durationMs": 224.1,
+    "metadata": {
+      "namespace": "guest",
+      "initialLimit": 10
+    }
+  },
+  {
+    "id": "log_day0_1793822418101",
+    "timestampIso": "2026-11-04T20:00:18.088Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "INFO",
+    "category": "startup",
+    "event": "DAY_ZERO_CLEAN_SLATE_INITIALIZED",
+    "metadata": {
+      "vaultNamespace": "guest",
+      "legacyTestDataRemoved": true,
+      "ringBufferCap": 500
+    }
+  },
+  {
+    "id": "log_1793822418165_ihqj8",
+    "timestampIso": "2026-11-04T20:00:18.165Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "METRIC",
+    "category": "startup",
+    "event": "PHASE2_IDLE_CATALOG_HYDRATION",
+    "durationMs": 3.9
+  },
+  {
+    "id": "log_1793822415053_9jj5u",
+    "timestampIso": "2026-11-04T20:00:15.053Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "ACTION",
+    "category": "navigation",
+    "event": "PRIMARY_TAB_SELECTED",
+    "metadata": {
+      "tab": "calories"
+    }
+  },
+  {
+    "id": "log_1793822412787_dmofu",
+    "timestampIso": "2026-11-04T20:00:12.787Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "METRIC",
+    "category": "startup",
+    "event": "PHASE1_DB_FAST_HYDRATION",
+    "durationMs": 184.4,
+    "metadata": {
+      "namespace": "guest",
+      "initialLimit": 10
+    }
+  },
+  {
+    "id": "log_day0_1793822412788",
+    "timestampIso": "2026-11-04T20:00:12.778Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "INFO",
+    "category": "startup",
+    "event": "DAY_ZERO_CLEAN_SLATE_INITIALIZED",
+    "metadata": {
+      "vaultNamespace": "guest",
+      "legacyTestDataRemoved": true,
+      "ringBufferCap": 500
+    }
+  },
+  {
+    "id": "log_1793822412852_qp7cw",
+    "timestampIso": "2026-11-04T20:00:12.852Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "ACTION",
+    "category": "navigation",
+    "event": "PRIMARY_TAB_SELECTED",
+    "metadata": {
+      "tab": "anatomy"
+    }
+  },
+  {
+    "id": "log_1793822412900_ds286",
+    "timestampIso": "2026-11-04T20:00:12.900Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "METRIC",
+    "category": "startup",
+    "event": "PHASE2_IDLE_CATALOG_HYDRATION",
+    "durationMs": 33
+  },
+  {
+    "id": "log_1793822407867_idt9j",
+    "timestampIso": "2026-11-04T20:00:07.867Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "ACTION",
+    "category": "navigation",
+    "event": "PRIMARY_TAB_SELECTED",
+    "metadata": {
+      "tab": "workouts"
+    }
+  },
+  {
+    "id": "log_1793822407910_020vz",
+    "timestampIso": "2026-11-04T20:00:07.910Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "METRIC",
+    "category": "startup",
+    "event": "PHASE1_DB_FAST_HYDRATION",
+    "durationMs": 244,
+    "metadata": {
+      "namespace": "guest",
+      "initialLimit": 10
+    }
+  },
+  {
+    "id": "log_day0_1793822407910",
+    "timestampIso": "2026-11-04T20:00:07.855Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "INFO",
+    "category": "startup",
+    "event": "DAY_ZERO_CLEAN_SLATE_INITIALIZED",
+    "metadata": {
+      "vaultNamespace": "guest",
+      "legacyTestDataRemoved": true,
+      "ringBufferCap": 500
+    }
+  },
+  {
+    "id": "log_1793822408047_pft0i",
+    "timestampIso": "2026-11-04T20:00:08.047Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "METRIC",
+    "category": "startup",
+    "event": "PHASE2_IDLE_CATALOG_HYDRATION",
+    "durationMs": 93.5
+  },
+  {
+    "id": "log_1793822402950_y841s",
+    "timestampIso": "2026-11-04T20:00:02.950Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "ACTION",
+    "category": "navigation",
+    "event": "PRIMARY_TAB_SELECTED",
+    "metadata": {
+      "tab": "settings"
+    }
+  },
+  {
+    "id": "log_1793822403007_nzalq",
+    "timestampIso": "2026-11-04T20:00:03.007Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "METRIC",
+    "category": "startup",
+    "event": "PHASE1_DB_FAST_HYDRATION",
+    "durationMs": 220.1,
+    "metadata": {
+      "namespace": "guest",
+      "initialLimit": 10
+    }
+  },
+  {
+    "id": "log_day0_1793822403007",
+    "timestampIso": "2026-11-04T20:00:02.992Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "INFO",
+    "category": "startup",
+    "event": "DAY_ZERO_CLEAN_SLATE_INITIALIZED",
+    "metadata": {
+      "vaultNamespace": "guest",
+      "legacyTestDataRemoved": true,
+      "ringBufferCap": 500
+    }
+  },
+  {
+    "id": "log_1793822403055_5b1ds",
+    "timestampIso": "2026-11-04T20:00:03.055Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "METRIC",
+    "category": "startup",
+    "event": "PHASE2_IDLE_CATALOG_HYDRATION",
+    "durationMs": 8
+  },
+  {
+    "id": "log_1793822399457_wqoib",
+    "timestampIso": "2026-11-04T19:59:59.457Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "METRIC",
+    "category": "startup",
+    "event": "PHASE2_IDLE_CATALOG_HYDRATION",
+    "durationMs": 37
+  },
+  {
+    "id": "log_1793822398856_cpbis",
+    "timestampIso": "2026-11-04T19:59:58.856Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "METRIC",
+    "category": "startup",
+    "event": "PHASE1_DB_FAST_HYDRATION",
+    "durationMs": 216.2,
+    "metadata": {
+      "namespace": "guest",
+      "initialLimit": 10
+    }
+  },
+  {
+    "id": "log_day0_1793822398857",
+    "timestampIso": "2026-11-04T19:59:58.772Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "INFO",
+    "category": "startup",
+    "event": "DAY_ZERO_CLEAN_SLATE_INITIALIZED",
+    "metadata": {
+      "vaultNamespace": "guest",
+      "legacyTestDataRemoved": true,
+      "ringBufferCap": 500
+    }
+  },
+  {
+    "id": "log_1793822392942_sa4as",
+    "timestampIso": "2026-11-04T19:59:52.942Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "METRIC",
+    "category": "startup",
+    "event": "PHASE1_DB_FAST_HYDRATION",
+    "durationMs": 156.9,
+    "metadata": {
+      "namespace": "guest",
+      "initialLimit": 10
+    }
+  },
+  {
+    "id": "log_day0_1793822392943",
+    "timestampIso": "2026-11-04T19:59:52.902Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "INFO",
+    "category": "startup",
+    "event": "DAY_ZERO_CLEAN_SLATE_INITIALIZED",
+    "metadata": {
+      "vaultNamespace": "guest",
+      "legacyTestDataRemoved": true,
+      "ringBufferCap": 500
+    }
+  },
+  {
+    "id": "log_1793822393036_a010c",
+    "timestampIso": "2026-11-04T19:59:53.036Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "METRIC",
+    "category": "startup",
+    "event": "PHASE2_IDLE_CATALOG_HYDRATION",
+    "durationMs": 32.4
+  },
+  {
+    "id": "log_1793822390540_89tyo",
+    "timestampIso": "2026-11-04T19:59:50.540Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "ACTION",
+    "category": "navigation",
+    "event": "PRIMARY_TAB_SELECTED",
+    "metadata": {
+      "tab": "track_sets"
+    }
+  },
+  {
+    "id": "log_1793822390667_ahaoe",
+    "timestampIso": "2026-11-04T19:59:50.667Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "ACTION",
+    "category": "navigation",
+    "event": "PRIMARY_TAB_SELECTED",
+    "metadata": {
+      "tab": "settings"
+    }
+  },
+  {
+    "id": "log_1793822388146_9gpsy",
+    "timestampIso": "2026-11-04T19:59:48.146Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "METRIC",
+    "category": "startup",
+    "event": "PHASE1_DB_FAST_HYDRATION",
+    "durationMs": 202.6,
+    "metadata": {
+      "namespace": "guest",
+      "initialLimit": 10
+    }
+  },
+  {
+    "id": "log_day0_1793822388146",
+    "timestampIso": "2026-11-04T19:59:48.105Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "INFO",
+    "category": "startup",
+    "event": "DAY_ZERO_CLEAN_SLATE_INITIALIZED",
+    "metadata": {
+      "vaultNamespace": "guest",
+      "legacyTestDataRemoved": true,
+      "ringBufferCap": 500
+    }
+  },
+  {
+    "id": "log_1793822388198_kpncd",
+    "timestampIso": "2026-11-04T19:59:48.198Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "METRIC",
+    "category": "startup",
+    "event": "PHASE2_IDLE_CATALOG_HYDRATION",
+    "durationMs": 3.2
+  },
+  {
+    "id": "log_1793822388364_p32ne",
+    "timestampIso": "2026-11-04T19:59:48.364Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "ACTION",
+    "category": "navigation",
+    "event": "PRIMARY_TAB_SELECTED",
+    "metadata": {
+      "tab": "settings"
+    }
+  },
+  {
+    "id": "log_purge_1793822385581",
+    "timestampIso": "2026-11-04T19:59:45.581Z",
+    "dayZeroOffsetMinutes": 0,
+    "level": "INFO",
+    "category": "storage",
+    "event": "TELEMETRY_RING_BUFFER_PURGED",
+    "metadata": {
+      "cleanSlate": true,
+      "ringBufferCap": 500
+    }
+  }
+]

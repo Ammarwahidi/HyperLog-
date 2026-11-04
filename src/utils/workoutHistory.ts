@@ -1,4 +1,4 @@
-import { jsPDF } from 'jspdf';
+import type { jsPDF } from 'jspdf';
 import {
   ActiveStandaloneSession,
   DailyNutritionRecord,
@@ -676,15 +676,16 @@ function stampPdfPageFooters(doc: jsPDF, subtitle: string): void {
   }
 }
 
-export function generateDateWorkoutPdfBlob(params: {
+export async function generateDateWorkoutPdfBlob(params: {
   dateIso: string;
   sessions: WorkoutHistoryRecord[];
   landmarks: Record<MuscleId, MuscleLandmark>;
   weightUnit: 'kg' | 'lb';
   nutritionRecord?: DailyNutritionRecord;
-}): Blob {
+}): Promise<Blob> {
   const { dateIso, sessions, landmarks, weightUnit, nutritionRecord } = params;
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const { jsPDF: JsPdfCtor } = await import('jspdf');
+  const doc = new JsPdfCtor({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
   const marginX = 14;
@@ -933,14 +934,14 @@ export function generateDateWorkoutPdfBlob(params: {
   return doc.output('blob');
 }
 
-export function generateFullHistoryPdfBlob(params: {
+export async function generateFullHistoryPdfBlob(params: {
   records: WorkoutHistoryRecord[];
   landmarks: Record<MuscleId, MuscleLandmark>;
   weightUnit: 'kg' | 'lb';
   streakDays: number;
   bestStreakDays: number;
   reportTitle?: string;
-}): Blob {
+}): Promise<Blob> {
   const {
     records,
     landmarks,
@@ -950,7 +951,8 @@ export function generateFullHistoryPdfBlob(params: {
     reportTitle = 'Complete Historical Workout Logbook',
   } = params;
 
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const { jsPDF: JsPdfCtor } = await import('jspdf');
+  const doc = new JsPdfCtor({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
   const marginX = 14;

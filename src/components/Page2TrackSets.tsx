@@ -34,7 +34,7 @@ import {
   shareOrDownloadPdfBlob,
 } from '../utils/workoutHistory';
 import { ExercisePickerModal } from './ExercisePickerModal';
-import { formatGlobalWorkoutClock } from './MinimizedWorkoutBar';
+import { LiveWorkoutClock, computeElapsedFromRunState } from './MinimizedWorkoutBar';
 import { PastWorkoutExerciseDraft, WorkoutCalendar } from './WorkoutCalendar';
 import {
   WorkoutHelpModal,
@@ -42,6 +42,7 @@ import {
   buildHelpTargetFromDayPlan,
   buildHelpTargetFromTemplate,
 } from './WorkoutHelpModal';
+import { TrackExerciseCard } from './TrackExerciseCard';
 import {
   Activity,
   ArrowLeftRight,
@@ -102,7 +103,7 @@ interface Page2TrackSetsProps {
   onSelectScheduleDay: (day: number) => Promise<void>;
   activeStandaloneSession: ActiveStandaloneSession | null;
   activeWorkoutRunState: ActiveWorkoutRunState | null;
-  globalElapsedSeconds: number;
+  globalElapsedSeconds?: number;
   onStartGlobalWorkout: () => Promise<void>;
   onTogglePauseGlobalWorkout: () => Promise<void>;
   onStopGlobalWorkoutTimer: () => Promise<void>;
@@ -437,7 +438,7 @@ const NumericSetInput: React.FC<NumericSetInputProps> = ({
   );
 };
 
-export const Page2TrackSets: React.FC<Page2TrackSetsProps> = ({
+export const Page2TrackSets: React.FC<Page2TrackSetsProps> = React.memo(({
   activeWeek,
   activeDay,
   hasSelectedWorkout = true,
@@ -446,7 +447,7 @@ export const Page2TrackSets: React.FC<Page2TrackSetsProps> = ({
   onSelectScheduleDay,
   activeStandaloneSession,
   activeWorkoutRunState,
-  globalElapsedSeconds,
+  globalElapsedSeconds = 0,
   onStartGlobalWorkout,
   onTogglePauseGlobalWorkout,
   onStopGlobalWorkoutTimer,
@@ -541,7 +542,13 @@ export const Page2TrackSets: React.FC<Page2TrackSetsProps> = ({
   const [customExWeightInput, setCustomExWeightInput] = useState<string>('20');
   const [customHubToast, setCustomHubToast] = useState<string | null>(null);
 
-  // Workout Switcher, Help Popup & Exercise Picker Modals
+  // Workout Switcher, Start Today's Workout Chooser, Help Popup & Exercise Picker Modals
+  const [isStartChoiceModalOpen, setIsStartChoiceModalOpen] = useState<boolean>(false);
+  const [startChoiceFilter, setStartChoiceFilter] = useState<'all' | 'rp' | 'starter' | 'custom'>(
+    'all'
+  );
+  const [startChoiceSearch, setStartChoiceSearch] = useState<string>('');
+  const [startChoiceCustomTitle, setStartChoiceCustomTitle] = useState<string>('');
   const [isWorkoutSwitcherOpen, setIsWorkoutSwitcherOpen] = useState<boolean>(false);
   const [switcherTab, setSwitcherTab] = useState<'templates' | 'schedule' | 'empty'>('templates');
   const [switcherSearch, setSwitcherSearch] = useState<string>('');
@@ -552,6 +559,17 @@ export const Page2TrackSets: React.FC<Page2TrackSetsProps> = ({
   const [historyModalExercise, setHistoryModalExercise] = useState<ExercisePrescription | null>(
     null
   );
+
+  useEffect(() => {
+    if (!isStartChoiceModalOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsStartChoiceModalOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isStartChoiceModalOpen]);
 
   useEffect(() => {
     if (!historyModalExercise) return;
@@ -1131,9 +1149,117 @@ export const Page2TrackSets: React.FC<Page2TrackSetsProps> = ({
     });
   };
 
-  const formatWeightDisplay = (kg: number) => formatWeightForDisplay(kg, weightUnit);
+  const formatWeightDisplay = useCallback(
+    (kg: number) => formatWeightForDisplay(kg, weightUnit),
+    [weightUnit]
+  );
 
-  const parseWeightToKg = (inputVal: number) => parseDisplayWeightToKg(inputVal, weightUnit);
+  const parseWeightToKg = useCallback(
+    (inputVal: number) => parseDisplayWeightToKg(inputVal, weightUnit),
+    [weightUnit]
+  );
+
+  const handleCommitWeight = useCallback(
+    (setRow: SetLogEntry, weightKg: number) => {
+      const merged = mergeRowWithPendingDraft(setRow, { weightKg });
+      void onUpsertSet(merged, false);
+    },
+    [onUpsertSet]
+  );
+
+  const handleDraftWeight = useCallback((setId: string, weightKg: number) => {
+    pendingRowDraftsRef.current[setId] = {
+      ...pendingRowDraftsRef.current[setId],
+      weightKg,
+    };
+  }, []);
+
+  const handleCommitReps = useCallback(
+    (setRow: SetLogEntry, reps: number) => {
+      const merged = mergeRowWithPendingDraft(setRow, { reps });
+      void onUpsertSet(merged, false);
+    },
+    [onUpsertSet]
+  );
+
+  const handleDraftReps = useCallback((setId: string, reps: number) => {
+    pendingRowDraftsRef.current[setId] = {
+      ...pendingRowDraftsRef.current[setId],
+      reps,
+    };
+  }, []);
+
+  const handleCommitRir = useCallback(
+    (setRow: SetLogEntry, rir: number) => {
+      const merged = mergeRowWithPendingDraft(setRow, { rir });
+      void onUpsertSet(merged, false);
+    },
+    [onUpsertSet]
+  );
+
+  const handleCommitRpe = useCallback(
+    (setRow: SetLogEntry, rpe: number | null) => {
+      const merged = mergeRowWithPendingDraft(setRow, { rpe });
+      void onUpsertSet(merged, false);
+    },
+    [onUpsertSet]
+  );
+
+  const handleDraftRpe = useCallback((setId: string, rpe: number | null) => {
+    pendingRowDraftsRef.current[setId] = {
+      ...pendingRowDraftsRef.current[setId],
+      rpe,
+    };
+  }, []);
+
+  const handleToggleExerciseExpand = useCallback((exId: string) => {
+    setExpandedExerciseIds((prev) => {
+      const nextState = !prev[exId];
+      triggerCardExpandCollapsePop([exId], nextState ? 'expand' : 'collapse');
+      return {
+        ...prev,
+        [exId]: nextState,
+      };
+    });
+  }, []);
+
+  const handleOpenExerciseHistory = useCallback((ex: ExercisePrescription) => {
+    setHistoryModalExercise((prev) => (prev?.id === ex.id ? null : ex));
+  }, []);
+
+  const handleCloseExerciseHistory = useCallback(() => {
+    setHistoryModalExercise(null);
+  }, []);
+
+  const handleStartRestCountdownFromCard = useCallback(
+    (seconds: number, name: string) => {
+      startRestCountdown(seconds, name);
+    },
+    []
+  );
+
+  const handleOpenFormHelpFromCard = useCallback(
+    (ex: ExercisePrescription) => {
+      setWorkoutHelpTarget(
+        buildHelpTargetFromDayPlan(
+          currentDayPlan,
+          activeWeek,
+          weekMeta.targetRir,
+          ex.id
+        )
+      );
+    },
+    [currentDayPlan, activeWeek, weekMeta.targetRir]
+  );
+
+  const handleCardAnimationEnd = useCallback((exId: string) => {
+    setPoppedCardById((prev) => {
+      if (!prev[exId]) return prev;
+      const next = { ...prev };
+      delete next[exId];
+      return next;
+    });
+  }, []);
 
   const formatTimer = (sec: number) => {
     const m = Math.floor(sec / 60);
@@ -1141,39 +1267,42 @@ export const Page2TrackSets: React.FC<Page2TrackSetsProps> = ({
     return `${m}:${String(s).padStart(2, '0')}`;
   };
 
-  const handleToggleComplete = async (
-    entry: SetLogEntry,
-    exerciseName: string,
-    prescribedRestSec?: number
-  ) => {
-    const mergedEntry = mergeRowWithPendingDraft(entry);
-    const nextCompleted = !mergedEntry.completed;
-    const now = new Date();
-    const sessionTitleLabel = currentDayPlan.title;
+  const handleToggleComplete = useCallback(
+    async (
+      entry: SetLogEntry,
+      exerciseName: string,
+      prescribedRestSec?: number
+    ) => {
+      const mergedEntry = mergeRowWithPendingDraft(entry);
+      const nextCompleted = !mergedEntry.completed;
+      const now = new Date();
+      const sessionTitleLabel = currentDayPlan.title;
 
-    if (nextCompleted) {
-      triggerSetPopAndHaptic(entry.id);
-    }
-
-    await onUpsertSet(
-      sanitizeSetLogEntry({
-        ...mergedEntry,
-        sessionTitle: mergedEntry.sessionTitle ?? sessionTitleLabel,
-        completed: nextCompleted,
-        completedAt: nextCompleted ? now.toISOString() : undefined,
-        completedDate: nextCompleted ? formatLocalDateISO(now) : undefined,
-      }),
-      nextCompleted
-    );
-    if (nextCompleted) {
-      if (autoTimerOnComplete) {
-        const chosenRest = userCustomRestSpecified
-          ? restDuration
-          : mergedEntry.restSeconds ?? prescribedRestSec ?? restDuration;
-        startRestCountdown(chosenRest, exerciseName);
+      if (nextCompleted) {
+        triggerSetPopAndHaptic(entry.id);
       }
-    }
-  };
+
+      await onUpsertSet(
+        sanitizeSetLogEntry({
+          ...mergedEntry,
+          sessionTitle: mergedEntry.sessionTitle ?? sessionTitleLabel,
+          completed: nextCompleted,
+          completedAt: nextCompleted ? now.toISOString() : undefined,
+          completedDate: nextCompleted ? formatLocalDateISO(now) : undefined,
+        }),
+        nextCompleted
+      );
+      if (nextCompleted) {
+        if (autoTimerOnComplete) {
+          const chosenRest = userCustomRestSpecified
+            ? restDuration
+            : mergedEntry.restSeconds ?? prescribedRestSec ?? restDuration;
+          startRestCountdown(chosenRest, exerciseName);
+        }
+      }
+    },
+    [currentDayPlan.title, onUpsertSet, autoTimerOnComplete, userCustomRestSpecified, restDuration]
+  );
 
   const getOrInitCardioTimer = (ex: ExercisePrescription): CardioExerciseTimerState => {
     const existing = cardioTimersByExId[ex.id];
@@ -1289,61 +1418,76 @@ export const Page2TrackSets: React.FC<Page2TrackSetsProps> = ({
     await onAddExerciseToActiveWorkout(cardioLibEx);
   };
 
-  const handleApplyPreviousToExercise = async (
-    ex: ExercisePrescription,
-    prevList: PreviousSetRef[]
-  ) => {
-    const exSets = setsByExercise[ex.id] ?? [];
-    for (let i = 0; i < exSets.length; i++) {
-      const row = exSets[i];
-      if (row.completed) continue;
-      const ref = prevList[Math.min(i, prevList.length - 1)];
-      if (!ref) continue;
-      await onUpsertSet(
-        {
-          ...row,
-          weightKg: ref.weightKg,
-          reps: ref.reps,
-        },
-        false
-      );
-    }
-  };
+  const handleApplyPreviousToExercise = useCallback(
+    async (ex: ExercisePrescription, prevList: PreviousSetRef[]) => {
+      const exSets = setsByExercise[ex.id] ?? [];
+      for (let i = 0; i < exSets.length; i++) {
+        const row = exSets[i];
+        if (row.completed) continue;
+        const ref = prevList[Math.min(i, prevList.length - 1)];
+        if (!ref) continue;
+        await onUpsertSet(
+          {
+            ...row,
+            weightKg: ref.weightKg,
+            reps: ref.reps,
+          },
+          false
+        );
+      }
+    },
+    [setsByExercise, onUpsertSet]
+  );
 
-  const handleAddSet = async (ex: ExercisePrescription) => {
-    const existing = setsByExercise[ex.id] ?? [];
-    const last = existing[existing.length - 1];
-    const prevList = previousSetsByExerciseId[ex.id];
-    const prevFallback = prevList ? prevList[prevList.length - 1] : undefined;
-    const nextIdx = existing.length + 1;
-    const sessionId = isStandaloneActive ? activeStandaloneSession?.sessionId : undefined;
-    const sessionTitleLabel = currentDayPlan.title;
+  const handleAddSet = useCallback(
+    async (ex: ExercisePrescription) => {
+      const existing = setsByExercise[ex.id] ?? [];
+      const last = existing[existing.length - 1];
+      const prevList = previousSetsByExerciseId[ex.id];
+      const prevFallback = prevList ? prevList[prevList.length - 1] : undefined;
+      const nextIdx = existing.length + 1;
+      const sessionId = isStandaloneActive ? activeStandaloneSession?.sessionId : undefined;
+      const sessionTitleLabel = currentDayPlan.title;
 
-    const newEntry: SetLogEntry = {
-      id: sessionId
-        ? `${sessionId}_${ex.id}_s${nextIdx}_${Date.now()}`
-        : `w${activeWeek}_d${activeDay}_${ex.id}_s${nextIdx}_${Date.now()}`,
-      week: activeWeek,
-      dayNumber: isStandaloneActive ? 0 : activeDay,
-      templateSessionId: sessionId,
-      sessionTitle: sessionTitleLabel,
-      exerciseId: ex.id,
-      exerciseName: ex.name,
-      muscleId: ex.muscleId,
-      setIndex: nextIdx,
-      weightKg: last ? last.weightKg : prevFallback?.weightKg ?? ex.defaultWeightKg,
-      reps: last ? last.reps : prevFallback?.reps ?? 10,
-      rir: last ? last.rir : weekMeta.defaultRirNumber,
-      rpe: last?.rpe,
-      restSeconds: ex.restSeconds ?? restDuration,
-      completed: false,
-    };
-    await onUpsertSet(newEntry, false);
-  };
+      const newEntry: SetLogEntry = {
+        id: sessionId
+          ? `${sessionId}_${ex.id}_s${nextIdx}_${Date.now()}`
+          : `w${activeWeek}_d${activeDay}_${ex.id}_s${nextIdx}_${Date.now()}`,
+        week: activeWeek,
+        dayNumber: isStandaloneActive ? 0 : activeDay,
+        templateSessionId: sessionId,
+        sessionTitle: sessionTitleLabel,
+        exerciseId: ex.id,
+        exerciseName: ex.name,
+        muscleId: ex.muscleId,
+        setIndex: nextIdx,
+        weightKg: last ? last.weightKg : prevFallback?.weightKg ?? ex.defaultWeightKg,
+        reps: last ? last.reps : prevFallback?.reps ?? 10,
+        rir: last ? last.rir : weekMeta.defaultRirNumber,
+        rpe: last?.rpe,
+        restSeconds: ex.restSeconds ?? restDuration,
+        completed: false,
+      };
+      await onUpsertSet(newEntry, false);
+    },
+    [
+      setsByExercise,
+      previousSetsByExerciseId,
+      isStandaloneActive,
+      activeStandaloneSession?.sessionId,
+      currentDayPlan.title,
+      activeWeek,
+      activeDay,
+      weekMeta.defaultRirNumber,
+      restDuration,
+      onUpsertSet,
+    ]
+  );
 
   const handleOpenFinishModal = () => {
     if (activeWorkoutRunState?.isActive) {
-      const globalMin = Math.max(1, Math.min(480, Math.round(globalElapsedSeconds / 60) || 1));
+      const liveElapsed = computeElapsedFromRunState(activeWorkoutRunState) || globalElapsedSeconds;
+      const globalMin = Math.max(1, Math.min(480, Math.round(liveElapsed / 60) || 1));
       setFinishDurationInput(String(globalMin));
     } else {
       const elapsedMin = Math.max(
@@ -1400,8 +1544,9 @@ export const Page2TrackSets: React.FC<Page2TrackSetsProps> = ({
         }
       }
 
+      const liveElapsed = computeElapsedFromRunState(activeWorkoutRunState) || globalElapsedSeconds;
       const elapsedMin = activeWorkoutRunState?.isActive
-        ? Math.max(1, Math.min(480, Math.round(globalElapsedSeconds / 60) || 1))
+        ? Math.max(1, Math.min(480, Math.round(liveElapsed / 60) || 1))
         : Math.max(
             15,
             Math.min(240, Math.round((Date.now() - sessionStartMsRef.current) / 60000) || 42)
@@ -1441,7 +1586,7 @@ export const Page2TrackSets: React.FC<Page2TrackSetsProps> = ({
 
       if (savedRecord) {
         if (alsoSharePdf) {
-          const pdfBlob = generateDateWorkoutPdfBlob({
+          const pdfBlob = await generateDateWorkoutPdfBlob({
             dateIso: savedRecord.date,
             sessions: [savedRecord],
             landmarks,
@@ -1496,7 +1641,7 @@ export const Page2TrackSets: React.FC<Page2TrackSetsProps> = ({
       activeStandaloneSession,
     });
 
-    const pdfBlob = generateDateWorkoutPdfBlob({
+    const pdfBlob = await generateDateWorkoutPdfBlob({
       dateIso: todayDateIso,
       sessions: [tempRecord],
       landmarks,
@@ -1628,29 +1773,66 @@ export const Page2TrackSets: React.FC<Page2TrackSetsProps> = ({
     [plan, activeDay]
   );
 
+  const hasScheduledExercises =
+    !scheduledDayPlan.isRestDay && scheduledDayPlan.exercises.length > 0;
+
+  const startChoiceTemplates = useMemo(() => {
+    const q = startChoiceSearch.trim().toLowerCase();
+    return [...templates]
+      .filter((tpl) => {
+        const isRp = tpl.id.startsWith('tpl_rp_') || tpl.name.startsWith('RP Hypertrophy');
+        if (startChoiceFilter === 'rp' && !isRp) return false;
+        if (startChoiceFilter === 'custom' && tpl.category !== 'Custom') return false;
+        if (startChoiceFilter === 'starter' && (isRp || tpl.category === 'Custom')) return false;
+        if (!q) return true;
+        const exerciseNames = tpl.exercises.map((e) => e.name).join(' ');
+        return `${tpl.name} ${tpl.splitType} ${tpl.description} ${exerciseNames}`
+          .toLowerCase()
+          .includes(q);
+      })
+      .sort((a, b) => {
+        const aSplit = a.id.startsWith('tpl_rp_split_day_') ? 1 : 0;
+        const bSplit = b.id.startsWith('tpl_rp_split_day_') ? 1 : 0;
+        if (aSplit !== bSplit) return bSplit - aSplit;
+        const aRp = a.id.startsWith('tpl_rp_') || a.name.startsWith('RP Hypertrophy') ? 1 : 0;
+        const bRp = b.id.startsWith('tpl_rp_') || b.name.startsWith('RP Hypertrophy') ? 1 : 0;
+        if (aRp !== bRp) return bRp - aRp;
+        if (a.category !== b.category) return a.category === 'Custom' ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      });
+  }, [templates, startChoiceFilter, startChoiceSearch]);
+
   const todayProgressSummary = useMemo(() => {
     const todayIso = formatLocalDateISO(new Date());
-    const plannedSetsFromSchedule = scheduledDayPlan.isRestDay
-      ? 10
-      : Math.max(
-          1,
-          scheduledDayPlan.exercises.reduce(
-            (sum, ex) => sum + Math.max(1, ex.weekSets[activeWeek] ?? 3),
-            0
-          )
-        );
+    const plannedSetsFromSchedule = hasScheduledExercises
+      ? scheduledDayPlan.exercises.reduce(
+          (sum, ex) => sum + Math.max(1, ex.weekSets[activeWeek] ?? 3),
+          0
+        )
+      : 0;
 
     let todayStrengthSets = 0;
     let todayCardioMinutes = 0;
     let todayCompletedSets = 0;
+    let todayPlannedSessionSets = 0;
 
     for (const s of setLogs) {
-      if (!s.completed) continue;
       const logDate = resolveSetLogDateISO(s);
+      const isActiveStandaloneSet =
+        Boolean(activeStandaloneSession) &&
+        s.templateSessionId === activeStandaloneSession?.sessionId;
       const isTodayLog =
         logDate === todayIso ||
-        (!logDate && !s.templateSessionId && s.week === activeWeek && s.dayNumber === activeDay);
+        isActiveStandaloneSet ||
+        (!logDate &&
+          !s.templateSessionId &&
+          hasScheduledExercises &&
+          s.week === activeWeek &&
+          s.dayNumber === activeDay);
+
       if (!isTodayLog) continue;
+      todayPlannedSessionSets += 1;
+      if (!s.completed) continue;
 
       todayCompletedSets += 1;
       const libMatch = exerciseLibrary.find(
@@ -1677,11 +1859,12 @@ export const Page2TrackSets: React.FC<Page2TrackSetsProps> = ({
       }
     }
 
-    const targetSets = Math.max(plannedSetsFromSchedule, todayCompletedSets || 1);
-    const completionPct = Math.min(
-      100,
-      Math.round((todayCompletedSets / Math.max(1, targetSets)) * 100)
-    );
+    const baseTarget = Math.max(plannedSetsFromSchedule, todayPlannedSessionSets);
+    const targetSets = todayCompletedSets > 0 ? Math.max(baseTarget, todayCompletedSets) : baseTarget;
+    const completionPct =
+      targetSets > 0
+        ? Math.min(100, Math.round((todayCompletedSets / Math.max(1, targetSets)) * 100))
+        : 0;
     const activeCaloriesKcal = Math.round(todayStrengthSets * 16.5 + todayCardioMinutes * 8.5);
 
     const statusHeadline =
@@ -1695,7 +1878,9 @@ export const Page2TrackSets: React.FC<Page2TrackSetsProps> = ({
 
     const statusSubcopy =
       completionPct === 0
-        ? 'Start gently and take today one calm, focused set at a time.'
+        ? hasScheduledExercises
+          ? 'Start gently and take today one calm, focused set at a time.'
+          : 'Start a workout of your choice or pick a hypertrophy template when you are ready.'
         : completionPct < 100
         ? `${todayCompletedSets} of ${targetSets} planned sets logged today.`
         : 'Wonderful consistency today. Hydrate well and let your muscles recover.';
@@ -1708,7 +1893,16 @@ export const Page2TrackSets: React.FC<Page2TrackSetsProps> = ({
       statusHeadline,
       statusSubcopy,
     };
-  }, [scheduledDayPlan, activeWeek, activeDay, setLogs, exerciseLibrary, workoutHistory]);
+  }, [
+    hasScheduledExercises,
+    scheduledDayPlan,
+    activeStandaloneSession,
+    activeWeek,
+    activeDay,
+    setLogs,
+    exerciseLibrary,
+    workoutHistory,
+  ]);
 
   const strengthTrendAnalytics = useMemo(() => {
     const completedStrength = setLogs.filter((s) => {
@@ -2108,7 +2302,9 @@ export const Page2TrackSets: React.FC<Page2TrackSetsProps> = ({
                       {todayProgressSummary.statusSubcopy}
                     </p>
                     <p className="text-xs font-mono tabular-nums text-slate-400 dark:text-slate-500">
-                      Day {activeDay} · {scheduledDayPlan.title}
+                      {hasScheduledExercises
+                        ? `Day ${activeDay} · ${scheduledDayPlan.title}`
+                        : `No preloaded session · Custom workout or ${templates.length} templates ready`}
                     </p>
                   </div>
 
@@ -2116,16 +2312,34 @@ export const Page2TrackSets: React.FC<Page2TrackSetsProps> = ({
                     <button
                       type="button"
                       data-testid="quick-open-day-sets-btn"
-                      onClick={() => onSelectScheduleDay(activeDay)}
+                      onClick={() => {
+                        if (hasScheduledExercises) {
+                          onSelectScheduleDay(activeDay);
+                        } else {
+                          setIsStartChoiceModalOpen(true);
+                        }
+                      }}
                       className="no-touch-delay min-h-[48px] px-6 py-3 rounded-2xl bg-sky-600 hover:bg-sky-500 dark:bg-sky-500 dark:hover:bg-sky-400 text-white text-sm font-semibold transition-colors inline-flex items-center justify-center gap-2 whitespace-nowrap"
                     >
                       <Play className="w-4 h-4 shrink-0" />
                       <span>
-                        {todayProgressSummary.todayCompletedSets > 0
+                        {todayProgressSummary.todayCompletedSets > 0 && hasScheduledExercises
                           ? "Continue Today's Workout"
                           : "Start Today's Workout"}
                       </span>
                     </button>
+
+                    {hasScheduledExercises && (
+                      <button
+                        type="button"
+                        data-testid="open-start-choice-secondary-btn"
+                        onClick={() => setIsStartChoiceModalOpen(true)}
+                        className="no-touch-delay min-h-[48px] px-4 py-3 rounded-2xl bg-white/90 hover:bg-white dark:bg-slate-800/80 dark:hover:bg-slate-800 border border-slate-200/90 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-sm font-medium transition-colors inline-flex items-center justify-center gap-1.5 whitespace-nowrap"
+                      >
+                        <Dumbbell className="w-4 h-4 text-sky-600 dark:text-sky-400 shrink-0" />
+                        <span>Templates</span>
+                      </button>
+                    )}
 
                     <button
                       type="button"
@@ -2136,7 +2350,7 @@ export const Page2TrackSets: React.FC<Page2TrackSetsProps> = ({
                     >
                       <Plus className="w-4 h-4 text-sky-600 dark:text-sky-400 shrink-0" />
                       <span>
-                        {isCustomComposerOpen ? 'Hide Custom Session' : 'Custom Exercise'}
+                        {isCustomComposerOpen ? 'Hide Custom Session' : 'Custom Session'}
                       </span>
                     </button>
                   </div>
@@ -2914,9 +3128,7 @@ export const Page2TrackSets: React.FC<Page2TrackSetsProps> = ({
                   <div className="flex items-center gap-2 min-w-0">
                     <CalendarIcon className="w-4 h-4 text-sky-600 dark:text-sky-400 shrink-0" />
                     <span className="font-semibold text-slate-800 dark:text-slate-100">
-                      {showActiveDayStrips
-                        ? 'Hide Day Switcher & 7-Day Streak'
-                        : 'Switch Day or View 7-Day Streak'}
+                      {showActiveDayStrips ? 'Hide Day Switcher' : 'Switch Day'}
                     </span>
                   </div>
                   <div className="flex items-center gap-2 shrink-0 text-slate-500 dark:text-slate-400 font-mono tabular-nums">
@@ -3138,16 +3350,15 @@ export const Page2TrackSets: React.FC<Page2TrackSetsProps> = ({
                         <>
                           <div className="flex items-center gap-2 min-w-0 font-mono tabular-nums">
                             <Timer className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                            <span
-                              data-testid="global-workout-timer-display"
+                            <LiveWorkoutClock
+                              runState={activeWorkoutRunState}
+                              testId="global-workout-timer-display"
                               className={`text-sm sm:text-base font-bold ${
                                 activeWorkoutRunState.isPaused
                                   ? 'text-amber-600 dark:text-amber-400'
                                   : 'text-emerald-600 dark:text-emerald-400'
                               }`}
-                            >
-                              {formatGlobalWorkoutClock(globalElapsedSeconds)}
-                            </span>
+                            />
                             <span className="font-sans text-xs text-slate-500 dark:text-slate-400 truncate">
                               · {activeWorkoutRunState.isPaused ? 'Paused' : 'Session Timer'}
                             </span>
@@ -3744,1006 +3955,64 @@ export const Page2TrackSets: React.FC<Page2TrackSetsProps> = ({
 
                     <div className="space-y-2.5">
                       {visibleExercises.map(({ ex, idx }) => {
-                          const exSets = setsByExercise[ex.id] ?? [];
-                          const completedSetsCount = exSets.filter((s) => s.completed).length;
-                          const lm = landmarks[ex.muscleId];
-                          const lastSet = exSets[exSets.length - 1];
-                          const prevList = previousSetsByExerciseId[ex.id];
-                          const recentThree = recentThreeSetsByExerciseId[ex.id] ?? [];
-                          const hasUncompletedSets = exSets.some((s) => !s.completed);
-                          const hasCompletedInThisExercise = completedSetsCount > 0;
+                        const exSets = setsByExercise[ex.id] ?? [];
+                        const lm = landmarks[ex.muscleId];
+                        const prevList = previousSetsByExerciseId[ex.id];
+                        const recentThree = recentThreeSetsByExerciseId[ex.id] ?? [];
+                        const cardioMode = isCardioExercise(ex, exerciseLibrary);
+                        const cardioTimer = cardioMode ? getOrInitCardioTimer(ex) : null;
+                        const isExpanded =
+                          focusedExerciseId === ex.id || Boolean(expandedExerciseIds[ex.id]);
+                        const isHistoryModalOpen = historyModalExercise?.id === ex.id;
+                        const cardPopDirection = poppedCardById[ex.id];
 
-                          const cardioMode = isCardioExercise(ex, exerciseLibrary);
-                          const cardioTimer = cardioMode ? getOrInitCardioTimer(ex) : null;
-                          const cardioPrimarySet = exSets[0];
-                          const isCardioDone = Boolean(cardioPrimarySet?.completed);
-                          const isExerciseComplete = cardioMode
-                            ? isCardioDone
-                            : exSets.length > 0 && completedSetsCount === exSets.length;
-                          const isExpanded =
-                            focusedExerciseId === ex.id || Boolean(expandedExerciseIds[ex.id]);
-                          const isHistoryModalOpen = historyModalExercise?.id === ex.id;
-                          const cardPopDirection = poppedCardById[ex.id];
-                          const targetMuscleName = lm?.name ?? ex.muscleId;
-                          const recentThreeMeanWeightLabel =
-                            !cardioMode && recentThree.length > 0
-                              ? formatCleanNumberString(
-                                  recentThree.reduce(
-                                    (sum, s) => sum + formatWeightDisplay(s.weightKg),
-                                    0
-                                  ) / recentThree.length,
-                                  1
-                                )
-                              : null;
-
-                          const historyTooltip =
-                            recentThree.length > 0
-                              ? `Previous ${recentThree.length} set${
-                                  recentThree.length === 1 ? '' : 's'
-                                }: ${recentThree
-                                  .map((s) =>
-                                    cardioMode
-                                      ? `${s.reps} min`
-                                      : `${formatWeightDisplay(s.weightKg)} ${weightUnit} × ${s.reps}`
-                                  )
-                                  .join(' · ')} — tap to toggle previous 3 sets`
-                              : `View previous 3 sets for ${ex.name} (no sets logged yet)`;
-
-                          const handleToggleExpandRow = () => {
-                            const nextExpanded = !isExpanded;
-                            triggerCardExpandCollapsePop(
-                              [ex.id],
-                              nextExpanded ? 'expand' : 'collapse'
-                            );
-                            if (focusedExerciseId === ex.id) {
-                              setFocusedExerciseId('all');
-                              setExpandedExerciseIds((prev) => ({
-                                ...prev,
-                                [ex.id]: false,
-                              }));
-                            } else {
-                              toggleExpandedExercise(ex.id);
-                            }
-                          };
-
-                          return (
-                            <div
-                              key={`${activeWeek}_${activeDay}_${activeStandaloneSession?.sessionId ?? 'sched'}_${ex.id}`}
-                              data-testid={
-                                cardioMode ? `cardio-timer-card-${ex.id}` : `strength-card-${ex.id}`
-                              }
-                              data-card-pop={cardPopDirection ?? undefined}
-                              onAnimationEnd={(ev) => {
-                                if (ev.target === ev.currentTarget && cardPopDirection) {
-                                  setPoppedCardById((prev) => {
-                                    if (!prev[ex.id]) return prev;
-                                    const copy = { ...prev };
-                                    delete copy[ex.id];
-                                    return copy;
-                                  });
-                                }
-                              }}
-                              className={`hl-card rounded-2xl relative ${
-                                isHistoryModalOpen ? 'z-30' : 'z-0'
-                              } ${
-                                cardPopDirection === 'expand'
-                                  ? 'hl-card-pop-expand'
-                                  : cardPopDirection === 'collapse'
-                                  ? 'hl-card-pop-collapse'
-                                  : ''
-                              } ${
-                                cardioMode && poppedSetId === cardioPrimarySet?.id
-                                  ? 'hl-set-row-pop'
-                                  : ''
-                              }`}
-                            >
-                              {/* Single Compact Row by Default */}
-                              <div
-                                data-testid={`compact-exercise-row-${ex.id}`}
-                                className="relative px-3.5 sm:px-4 py-2 min-h-[60px] flex items-center justify-between gap-2"
-                              >
-                                <button
-                                  type="button"
-                                  onClick={handleToggleExpandRow}
-                                  className="no-touch-delay flex-1 min-w-0 min-h-[44px] flex items-center gap-2.5 sm:gap-3 text-left group"
-                                >
-                                  <span
-                                    className={`w-7 h-7 rounded-lg shrink-0 flex items-center justify-center font-mono tabular-nums text-xs font-bold transition-colors ${
-                                      isExerciseComplete
-                                        ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
-                                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
-                                    }`}
-                                  >
-                                    {isExerciseComplete ? (
-                                      <Check className="w-3.5 h-3.5" />
-                                    ) : (
-                                      String(idx + 1).padStart(2, '0')
-                                    )}
-                                  </span>
-
-                                  <div className="min-w-0 flex-1 flex items-center justify-between gap-2">
-                                    <span className="text-sm sm:text-[15px] font-semibold text-slate-900 dark:text-slate-100 truncate group-hover:text-sky-600 dark:group-hover:text-sky-400 transition-colors">
-                                      {ex.name}
-                                    </span>
-
-                                    <span className="text-xs text-slate-500 dark:text-slate-400 font-mono tabular-nums whitespace-nowrap shrink-0">
-                                      {cardioMode
-                                        ? `${
-                                            isCardioDone
-                                              ? `${cardioPrimarySet?.reps ?? Math.round((cardioTimer?.targetSec ?? 900) / 60)}m done`
-                                              : `${Math.round((cardioTimer?.targetSec ?? 900) / 60)}m cardio`
-                                          }`
-                                        : `${lm?.shortName ?? ex.muscleId} · ${completedSetsCount}/${exSets.length}`}
-                                    </span>
-                                  </div>
-                                </button>
-
-                                <div className="flex items-center gap-1.5 shrink-0">
-                                  {/* History Icon Button: Toggles Mini-Modal with Recent 3 Sets from setLogs */}
-                                  <button
-                                    type="button"
-                                    data-testid={`exercise-history-btn-${ex.id}`}
-                                    aria-expanded={isHistoryModalOpen}
-                                    aria-haspopup="dialog"
-                                    aria-label={`View previous 3 sets for ${ex.name}`}
-                                    title={historyTooltip}
-                                    onClick={() =>
-                                      setHistoryModalExercise((prev) =>
-                                        prev?.id === ex.id ? null : ex
-                                      )
-                                    }
-                                    className={`no-touch-delay min-h-[44px] min-w-[44px] px-2.5 rounded-xl border text-xs font-medium transition-colors inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 ${
-                                      isHistoryModalOpen
-                                        ? 'bg-sky-50/95 dark:bg-sky-950/60 border-sky-400 dark:border-sky-600 text-sky-700 dark:text-sky-300'
-                                        : recentThree.length > 0
-                                        ? 'hl-subtle text-sky-700 dark:text-sky-300 border-sky-200/80 dark:border-sky-800/70 hover:border-sky-500'
-                                        : 'hl-subtle text-slate-600 dark:text-slate-300 hover:text-sky-600 dark:hover:text-sky-400 hover:border-sky-400'
-                                    }`}
-                                  >
-                                    <History className="w-4 h-4 shrink-0" />
-                                    <span className="sr-only sm:not-sr-only font-mono tabular-nums text-[11px]">
-                                      {recentThree.length > 0
-                                        ? `History (${recentThree.length})`
-                                        : 'History'}
-                                    </span>
-                                  </button>
-
-                                  {/* Expand Icon Button: Toggles Hidden Weight/Rep History Div via CSS Transitions */}
-                                  <button
-                                    type="button"
-                                    data-testid={`expand-exercise-btn-${ex.id}`}
-                                    aria-expanded={isExpanded}
-                                    aria-controls={`exercise-details-panel-${ex.id}`}
-                                    aria-label={
-                                      isExpanded
-                                        ? `Collapse ${ex.name}`
-                                        : `Expand ${ex.name} rep/weight history and sets`
-                                    }
-                                    title={
-                                      isExpanded
-                                        ? 'Hide detailed rep/weight history & sets'
-                                        : 'Expand detailed rep/weight history & sets'
-                                    }
-                                    onClick={handleToggleExpandRow}
-                                    className={`no-touch-delay min-h-[44px] min-w-[44px] px-2.5 rounded-xl border text-xs font-medium transition-colors inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 ${
-                                      isExpanded
-                                        ? 'bg-sky-50/90 dark:bg-sky-950/50 border-sky-300 dark:border-sky-700 text-sky-700 dark:text-sky-300'
-                                        : 'hl-subtle text-slate-600 dark:text-slate-300 hover:text-sky-600 dark:hover:text-sky-400 hover:border-sky-400'
-                                    }`}
-                                  >
-                                    <span className="sr-only sm:not-sr-only">
-                                      {isExpanded ? 'Hide' : 'Expand'}
-                                    </span>
-                                    <ChevronDown
-                                      className={`w-4 h-4 shrink-0 transition-transform duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-                                        isExpanded ? 'rotate-180' : 'rotate-0'
-                                      }`}
-                                    />
-                                  </button>
-                                </div>
-
-                                {/* Anchored Mini-Modal: Most Recent 3 Set Logs from `setLogs` State */}
-                                <AnimatePresence>
-                                  {isHistoryModalOpen && (
-                                    <motion.div
-                                      key={`history-mini-modal-${ex.id}`}
-                                      initial={
-                                        shouldReduceMotion
-                                          ? { opacity: 1 }
-                                          : { opacity: 0, y: 6, scale: 0.98 }
-                                      }
-                                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                                      exit={
-                                        shouldReduceMotion
-                                          ? { opacity: 0 }
-                                          : { opacity: 0, y: 4, scale: 0.98 }
-                                      }
-                                      transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
-                                      role="dialog"
-                                      aria-modal="false"
-                                      aria-labelledby={`exercise-history-modal-title-${ex.id}`}
-                                      data-testid="exercise-history-mini-modal"
-                                      className="absolute right-2 sm:right-4 top-full mt-1.5 z-40 w-[min(22rem,calc(100vw-2.25rem))] hl-card rounded-2xl p-4 space-y-3.5 shadow-2xl border border-slate-200/90 dark:border-slate-700"
-                                    >
-                                      <div className="flex items-start justify-between gap-3">
-                                        <div className="min-w-0">
-                                          <h3
-                                            id={`exercise-history-modal-title-${ex.id}`}
-                                            className="text-sm font-bold text-slate-900 dark:text-white truncate"
-                                          >
-                                            {ex.name}
-                                          </h3>
-                                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                                            Most recent 3 set logs · {targetMuscleName}
-                                          </p>
-                                        </div>
-                                        <button
-                                          type="button"
-                                          data-testid="close-exercise-history-modal-btn"
-                                          onClick={() => setHistoryModalExercise(null)}
-                                          className="no-touch-delay min-h-[36px] min-w-[36px] rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors shrink-0"
-                                          aria-label="Close exercise history"
-                                        >
-                                          <X className="w-4 h-4" />
-                                        </button>
-                                      </div>
-
-                                      {recentThree.length === 0 ? (
-                                        <div
-                                          data-testid="exercise-history-empty-state"
-                                          className="py-4 border-y border-slate-200/80 dark:border-slate-800 text-xs text-slate-500 dark:text-slate-400 leading-relaxed"
-                                        >
-                                          No completed sets recorded for{' '}
-                                          <span className="font-semibold text-slate-700 dark:text-slate-200">
-                                            {ex.name}
-                                          </span>{' '}
-                                          yet. Complete sets below and your 3 most recent logs will appear here.
-                                        </div>
-                                      ) : (
-                                        <div
-                                          data-testid="exercise-history-sets-list"
-                                          className="divide-y divide-slate-200/80 dark:divide-slate-800 border-y border-slate-200/80 dark:border-slate-800"
-                                        >
-                                          {recentThree.map((s, rIdx) => {
-                                            const dIso = resolveSetLogDateISO(s);
-                                            const dateLabel = !dIso
-                                              ? `Week ${s.week}`
-                                              : dIso === todayIso
-                                              ? 'Today'
-                                              : formatHumanDateShort(dIso);
-
-                                            return (
-                                              <div
-                                                key={`${s.id}_${rIdx}`}
-                                                data-testid={`exercise-history-row-${rIdx}`}
-                                                className="py-2.5 flex items-center justify-between gap-3"
-                                              >
-                                                <div className="min-w-0">
-                                                  <div className="text-xs font-semibold text-slate-800 dark:text-slate-100 font-mono tabular-nums">
-                                                    Set {s.setIndex}
-                                                  </div>
-                                                  <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
-                                                    {dateLabel}
-                                                    {s.sessionTitle ? ` · ${s.sessionTitle}` : ''}
-                                                  </div>
-                                                </div>
-
-                                                <div className="text-right shrink-0 font-mono tabular-nums">
-                                                  <div className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
-                                                    {cardioMode
-                                                      ? `${s.reps} min`
-                                                      : `${formatWeightDisplay(s.weightKg)} ${weightUnit} × ${s.reps}`}
-                                                  </div>
-                                                  <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                                                    {cardioMode
-                                                      ? 'Timed cardio'
-                                                      : `${s.rir} RIR${
-                                                          s.rpe !== undefined ? ` · RPE ${s.rpe}` : ''
-                                                        }`}
-                                                  </div>
-                                                </div>
-                                              </div>
-                                            );
-                                          })}
-                                        </div>
-                                      )}
-
-                                      <div className="flex items-center justify-end gap-2 pt-0.5">
-                                        {!cardioMode &&
-                                          recentThree.length > 0 &&
-                                          hasUncompletedSets && (
-                                            <button
-                                              type="button"
-                                              data-testid="apply-exercise-history-btn"
-                                              onClick={async () => {
-                                                await handleApplyPreviousToExercise(
-                                                  ex,
-                                                  recentThree.map((s) => ({
-                                                    weightKg: s.weightKg,
-                                                    reps: s.reps,
-                                                    rpe: s.rpe,
-                                                  }))
-                                                );
-                                                setHistoryModalExercise(null);
-                                              }}
-                                              className="no-touch-delay flex-1 min-h-[40px] px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold transition-colors whitespace-nowrap"
-                                            >
-                                              Use Weights &amp; Reps
-                                            </button>
-                                          )}
-                                        <button
-                                          type="button"
-                                          data-testid="done-exercise-history-modal-btn"
-                                          onClick={() => setHistoryModalExercise(null)}
-                                          className={`no-touch-delay min-h-[40px] px-4 py-1.5 rounded-xl hl-subtle border text-xs font-semibold text-slate-700 dark:text-slate-200 hover:border-slate-400 transition-colors ${
-                                            !cardioMode &&
-                                            recentThree.length > 0 &&
-                                            hasUncompletedSets
-                                              ? ''
-                                              : 'w-full'
-                                          }`}
-                                        >
-                                          Done
-                                        </button>
-                                      </div>
-                                    </motion.div>
-                                  )}
-                                </AnimatePresence>
-                              </div>
-
-                              {/* Hidden Div Containing Detailed Weight/Rep History & Set Inputs (CSS Transition Smooth Reveal) */}
-                              <div
-                                id={`exercise-details-panel-${ex.id}`}
-                                data-testid={`exercise-details-panel-${ex.id}`}
-                                data-expanded={isExpanded ? 'true' : 'false'}
-                                aria-hidden={!isExpanded}
-                                className="hl-collapse-wrapper"
-                              >
-                                <div className="hl-collapse-inner">
-                                  <div className="px-4 pb-4 pt-3 sm:px-5 sm:pb-5 border-t border-slate-200/70 dark:border-slate-800/80 space-y-3.5">
-                                    {/* Detailed Weight/Rep History & Exercise Controls */}
-                                    <div
-                                      data-testid={`exercise-rep-weight-history-${ex.id}`}
-                                      className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400"
-                                    >
-                                      <div className="flex flex-wrap items-center gap-1.5 min-w-0">
-                                        {cardioMode && cardioTimer ? (
-                                          <span className="font-mono tabular-nums text-emerald-700 dark:text-emerald-400 font-semibold">
-                                            Target {Math.round(cardioTimer.targetSec / 60)} min timer
-                                          </span>
-                                        ) : (
-                                          <>
-                                            <span className="font-mono tabular-nums text-slate-700 dark:text-slate-300">
-                                              {ex.repRange} reps
-                                            </span>
-                                            <span aria-hidden="true">·</span>
-                                            <button
-                                              type="button"
-                                              onClick={() =>
-                                                startRestCountdown(
-                                                  ex.restSeconds ?? restDuration,
-                                                  ex.name
-                                                )
-                                              }
-                                              className="no-touch-delay font-mono tabular-nums text-sky-600 dark:text-sky-400 hover:underline font-medium"
-                                              title="Start prescribed rest timer for this exercise"
-                                            >
-                                              {ex.restSeconds ?? restDuration}s rest
-                                            </button>
-                                          </>
-                                        )}
-                                        {ex.isSuperset && !cardioMode && (
-                                          <>
-                                            <span aria-hidden="true">·</span>
-                                            <span className="font-semibold text-sky-700 dark:text-sky-300">
-                                              Superset
-                                            </span>
-                                          </>
-                                        )}
-                                        <span aria-hidden="true">·</span>
-                                        <span className="font-mono tabular-nums text-slate-600 dark:text-slate-300">
-                                          {recentThree.length > 0
-                                            ? `Last: ${recentThree
-                                                .map((s) =>
-                                                  cardioMode
-                                                    ? `Set ${s.setIndex}: ${s.reps}m`
-                                                    : `Set ${s.setIndex}: ${formatWeightDisplay(s.weightKg)} ${weightUnit} × ${s.reps} (${s.rir} RIR)`
-                                                )
-                                                .join(' · ')}`
-                                            : 'No prior history yet'}
-                                        </span>
-                                        {!cardioMode && (
-                                          <>
-                                            <span aria-hidden="true">·</span>
-                                            <span
-                                              data-testid={`exercise-history-average-${ex.id}`}
-                                              className={`text-[11px] font-mono tabular-nums whitespace-nowrap ${
-                                                recentThreeMeanWeightLabel
-                                                  ? 'text-sky-700 dark:text-sky-300 font-semibold'
-                                                  : 'text-slate-400 dark:text-slate-500'
-                                              }`}
-                                              title={
-                                                recentThreeMeanWeightLabel
-                                                  ? `Mean weight across the last ${recentThree.length} displayed set${recentThree.length === 1 ? '' : 's'}`
-                                                  : 'Mean weight across the last 3 displayed sets'
-                                              }
-                                            >
-                                              {recentThreeMeanWeightLabel
-                                                ? `Average: ${recentThreeMeanWeightLabel} ${weightUnit}`
-                                                : 'Average: —'}
-                                            </span>
-                                          </>
-                                        )}
-                                      </div>
-
-                                      <div className="flex flex-wrap items-center gap-1.5 shrink-0">
-                                        {!cardioMode &&
-                                          prevList &&
-                                          prevList.length > 0 &&
-                                          hasUncompletedSets && (
-                                            <button
-                                              type="button"
-                                              onClick={() =>
-                                                handleApplyPreviousToExercise(ex, prevList)
-                                              }
-                                              className="no-touch-delay min-h-[34px] px-2.5 py-1 rounded-lg hl-subtle border text-xs font-semibold text-sky-600 dark:text-sky-400 hover:border-sky-500 transition-colors whitespace-nowrap"
-                                            >
-                                              Use Last
-                                            </button>
-                                          )}
-
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            setWorkoutHelpTarget(
-                                              buildHelpTargetFromDayPlan(
-                                                currentDayPlan,
-                                                activeWeek,
-                                                weekMeta.targetRir,
-                                                ex.id
-                                              )
-                                            )
-                                          }
-                                          className="no-touch-delay min-h-[34px] px-2.5 py-1 rounded-lg hl-subtle border text-xs font-semibold text-sky-600 dark:text-sky-400 hover:border-sky-500 transition-colors flex items-center gap-1 whitespace-nowrap"
-                                          title={`How to perform ${ex.name}`}
-                                        >
-                                          <HelpCircle className="w-3.5 h-3.5" />
-                                          <span>Form</span>
-                                        </button>
-
-                                        {!hasCompletedInThisExercise &&
-                                          currentDayPlan.exercises.length > 1 && (
-                                            <button
-                                              type="button"
-                                              onClick={() =>
-                                                onRemoveExerciseFromActiveWorkout(ex.id)
-                                              }
-                                              className="no-touch-delay min-h-[34px] min-w-[34px] rounded-lg flex items-center justify-center text-slate-400 hover:text-amber-700 dark:hover:text-amber-400 hover:bg-amber-50/70 dark:hover:bg-amber-950/30 transition-colors"
-                                              title={`Remove ${ex.name} from session`}
-                                              aria-label={`Remove ${ex.name} from session`}
-                                            >
-                                              <Trash2 className="w-3.5 h-3.5" />
-                                            </button>
-                                          )}
-                                      </div>
-                                    </div>
-
-                                    {isExpanded &&
-                                      (cardioMode && cardioTimer ? (
-                                        /* TIMER-BASED CARDIO TRACKER (Replaces Set × Weight × Reps Rows) */
-                                        <div className="space-y-3.5 pt-0.5">
-                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-slate-200/80 dark:border-slate-800">
-                                          <div className="flex items-center gap-3.5">
-                                            <div className="flex items-center gap-1.5">
-                                              <button
-                                                type="button"
-                                                onClick={() => {
-                                                  playTimerSetTone(soundEnabledRef.current);
-                                                  updateCardioTimer(ex, (st) => {
-                                                    const nextTarget = Math.max(
-                                                      60,
-                                                      st.targetSec - 60
-                                                    );
-                                                    return {
-                                                      ...st,
-                                                      targetSec: nextTarget,
-                                                      remainingSec: Math.max(
-                                                        10,
-                                                        st.remainingSec - 60
-                                                      ),
-                                                    };
-                                                  });
-                                                }}
-                                                className="no-touch-delay min-h-[44px] min-w-[44px] rounded-xl hl-subtle border flex items-center justify-center text-slate-700 dark:text-slate-200 hover:border-slate-400"
-                                                aria-label="Subtract 1 minute from cardio timer"
-                                              >
-                                                <Minus className="w-4 h-4" />
-                                              </button>
-
-                                              <div className="px-3 text-center">
-                                                <div
-                                                  data-testid={`cardio-clock-${ex.id}`}
-                                                  className="text-3xl sm:text-4xl font-bold font-mono tabular-nums text-slate-900 dark:text-white leading-none"
-                                                >
-                                                  {formatTimer(cardioTimer.remainingSec)}
-                                                </div>
-                                                <div className="text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400 mt-1">
-                                                  Elapsed {formatTimer(cardioTimer.elapsedSec)} ·{' '}
-                                                  {cardioTimer.intensityZone}
-                                                </div>
-                                              </div>
-
-                                              <button
-                                                type="button"
-                                                onClick={() => {
-                                                  playTimerSetTone(soundEnabledRef.current);
-                                                  updateCardioTimer(ex, (st) => {
-                                                    const nextTarget = Math.min(
-                                                      5400,
-                                                      st.targetSec + 60
-                                                    );
-                                                    return {
-                                                      ...st,
-                                                      targetSec: nextTarget,
-                                                      remainingSec: Math.min(
-                                                        5400,
-                                                        st.remainingSec + 60
-                                                      ),
-                                                    };
-                                                  });
-                                                }}
-                                                className="no-touch-delay min-h-[44px] min-w-[44px] rounded-xl hl-subtle border flex items-center justify-center text-slate-700 dark:text-slate-200 hover:border-slate-400"
-                                                aria-label="Add 1 minute to cardio timer"
-                                              >
-                                                <Plus className="w-4 h-4" />
-                                              </button>
-                                            </div>
-                                          </div>
-
-                                          <div className="flex flex-wrap items-center gap-2">
-                                            <button
-                                              type="button"
-                                              data-testid={`cardio-start-pause-btn-${ex.id}`}
-                                              onClick={() => {
-                                                if (!cardioTimer.isRunning) {
-                                                  playTimerSetTone(soundEnabledRef.current);
-                                                }
-                                                updateCardioTimer(ex, (st) => ({
-                                                  ...st,
-                                                  remainingSec:
-                                                    st.remainingSec <= 0
-                                                      ? st.targetSec
-                                                      : st.remainingSec,
-                                                  isRunning: !st.isRunning,
-                                                }));
-                                              }}
-                                              className="no-touch-delay min-h-[44px] px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold transition-colors flex items-center gap-1.5 whitespace-nowrap"
-                                            >
-                                              {cardioTimer.isRunning ? (
-                                                <>
-                                                  <Pause className="w-4 h-4" />
-                                                  <span>Pause Timer</span>
-                                                </>
-                                              ) : (
-                                                <>
-                                                  <Play className="w-4 h-4" />
-                                                  <span>Start Cardio Timer</span>
-                                                </>
-                                              )}
-                                            </button>
-
-                                            <button
-                                              type="button"
-                                              onClick={() => {
-                                                playTimerSetTone(soundEnabledRef.current);
-                                                updateCardioTimer(ex, (st) => ({
-                                                  ...st,
-                                                  isRunning: false,
-                                                  remainingSec: st.targetSec,
-                                                  elapsedSec: 0,
-                                                }));
-                                              }}
-                                              className="no-touch-delay min-h-[44px] px-3 py-2 rounded-xl hl-subtle border text-xs font-semibold text-slate-700 dark:text-slate-200 hover:border-slate-400 flex items-center gap-1 whitespace-nowrap"
-                                            >
-                                              <RotateCcw className="w-3.5 h-3.5" />
-                                              <span>Reset</span>
-                                            </button>
-
-                                            <button
-                                              type="button"
-                                              data-testid={`complete-cardio-btn-${ex.id}`}
-                                              onClick={() => void handleCompleteCardioTimer(ex)}
-                                              className={`no-touch-delay min-h-[44px] px-4 py-2 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 whitespace-nowrap ${
-                                                isCardioDone
-                                                  ? 'bg-emerald-600 text-white hover:bg-emerald-500'
-                                                  : 'bg-slate-900 dark:bg-emerald-600 text-white hover:opacity-90'
-                                              }`}
-                                            >
-                                              <Check className="w-4 h-4" />
-                                              <span>
-                                                {isCardioDone
-                                                  ? `Cardio Logged (${cardioPrimarySet?.reps ?? Math.round(cardioTimer.targetSec / 60)}m)`
-                                                  : 'Complete Cardio'}
-                                              </span>
-                                            </button>
-                                          </div>
-                                        </div>
-
-                                        <div className="flex flex-wrap items-center justify-between gap-2.5 text-xs">
-                                          <div className="flex flex-wrap items-center gap-1.5">
-                                            <span className="text-slate-500 dark:text-slate-400 font-medium mr-1">
-                                              Duration:
-                                            </span>
-                                            {[5, 10, 15, 20, 30, 45].map((mins) => {
-                                              const sec = mins * 60;
-                                              const isSelected = cardioTimer.targetSec === sec;
-                                              return (
-                                                <button
-                                                  key={mins}
-                                                  type="button"
-                                                  onClick={() => {
-                                                    playTimerSetTone(soundEnabledRef.current);
-                                                    updateCardioTimer(ex, (st) => ({
-                                                      ...st,
-                                                      targetSec: sec,
-                                                      remainingSec: sec,
-                                                      isRunning: false,
-                                                    }));
-                                                  }}
-                                                  className={`no-touch-delay min-h-[36px] px-2.5 py-1 rounded-lg font-mono tabular-nums font-semibold border transition-colors ${
-                                                    isSelected
-                                                      ? 'bg-slate-900 dark:bg-sky-600 text-white border-slate-900 dark:border-sky-500'
-                                                      : 'hl-subtle text-slate-700 dark:text-slate-300 hover:border-slate-400'
-                                                  }`}
-                                                >
-                                                  {mins}m
-                                                </button>
-                                              );
-                                            })}
-                                          </div>
-
-                                          <select
-                                            aria-label={`Cardio intensity zone for ${ex.name}`}
-                                            value={cardioTimer.intensityZone}
-                                            onChange={(e) =>
-                                              updateCardioTimer(ex, (st) => ({
-                                                ...st,
-                                                intensityZone: e.target.value,
-                                              }))
-                                            }
-                                            className="min-h-[38px] px-2.5 py-1 text-xs font-semibold hl-input rounded-lg"
-                                          >
-                                            <option value="Zone 2 Aerobic Base">
-                                              Zone 2 Aerobic Base
-                                            </option>
-                                            <option value="Zone 3 Tempo">Zone 3 Tempo</option>
-                                            <option value="Zone 4 Threshold">
-                                              Zone 4 Threshold
-                                            </option>
-                                            <option value="HIIT Intervals">HIIT Intervals</option>
-                                          </select>
-                                        </div>
-                                      </div>
-                                    ) : (
-                                      <>
-                                        {/* Calm 5-Column Default Set Rows (Optional RPE column tucked in Timer & Effort Options unless populated) */}
-                                        {(() => {
-                                          const showRpeCol =
-                                            showAdvancedRpe ||
-                                            exSets.some(
-                                              (s) => s.rpe !== undefined && s.rpe !== null
-                                            );
-                                          const gridColsClass = showRpeCol
-                                            ? 'grid-cols-[2rem_minmax(0,1.2fr)_minmax(0,0.9fr)_minmax(0,1.15fr)_minmax(0,0.85fr)_2.75rem] sm:grid-cols-[2.75rem_minmax(0,1.35fr)_minmax(0,1fr)_minmax(0,1.25fr)_minmax(0,1fr)_3.25rem]'
-                                            : 'grid-cols-[2.25rem_minmax(0,1.35fr)_minmax(0,1fr)_minmax(0,1.2fr)_2.85rem] sm:grid-cols-[2.75rem_minmax(0,1.5fr)_minmax(0,1.1fr)_minmax(0,1.3fr)_3.25rem]';
-
-                                          return (
-                                            <div className="space-y-2">
-                                              <div
-                                                className={`grid ${gridColsClass} gap-1.5 sm:gap-2.5 px-2 text-[11px] font-semibold text-slate-500 dark:text-slate-400 items-center`}
-                                              >
-                                                <div className="text-center">Set</div>
-                                                <div className="text-center">
-                                                  Weight ({weightUnit})
-                                                </div>
-                                                <div className="text-center">Reps</div>
-                                                <div className="text-center">Effort</div>
-                                                {showRpeCol && (
-                                                  <div className="text-center">
-                                                    RPE{' '}
-                                                    <span className="hidden sm:inline font-normal text-slate-400">
-                                                      (opt)
-                                                    </span>
-                                                  </div>
-                                                )}
-                                                <div className="text-center">Done</div>
-                                              </div>
-
-                                              <AnimatePresence initial={true} mode="popLayout">
-                                                {exSets.map((setRow, sIdx) => {
-                                                  const rirVisual = getRirVisualFeedback(
-                                                    setRow.rir
-                                                  );
-                                                  const hasMatchingOption = RIR_OPTIONS.some(
-                                                    (o) => o.value === setRow.rir
-                                                  );
-                                                  const rpeHighEffort =
-                                                    typeof setRow.rpe === 'number' &&
-                                                    setRow.rpe >= 9.5;
-                                                  const rpeOptimalEffort =
-                                                    typeof setRow.rpe === 'number' &&
-                                                    setRow.rpe >= 7 &&
-                                                    setRow.rpe < 9.5;
-                                                  const isPopped = poppedSetId === setRow.id;
-
-                                                  return (
-                                                    <motion.div
-                                                      key={`${activeWeek}_${activeDay}_${activeStandaloneSession?.sessionId ?? 'sched'}_${focusedExerciseId}_${setRow.id}`}
-                                                      layout={!shouldReduceMotion}
-                                                      initial={
-                                                        shouldReduceMotion
-                                                          ? false
-                                                          : { opacity: 0, y: 10, scale: 0.985 }
-                                                      }
-                                                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                                                      exit={
-                                                        shouldReduceMotion
-                                                          ? { opacity: 0 }
-                                                          : { opacity: 0, y: -6, scale: 0.985 }
-                                                      }
-                                                      transition={{
-                                                        duration: 0.2,
-                                                        delay: Math.min(sIdx * 0.035, 0.16),
-                                                        ease: [0.16, 1, 0.3, 1],
-                                                      }}
-                                                      data-testid={`set-row-${setRow.id}`}
-                                                      data-framer-animated="true"
-                                                      data-popped={isPopped ? 'true' : undefined}
-                                                      className={`grid ${gridColsClass} gap-1.5 sm:gap-2.5 items-center p-2 rounded-xl border transition-colors ${
-                                                        setRow.completed
-                                                          ? 'bg-emerald-50/55 dark:bg-emerald-950/35 border-emerald-300/80 dark:border-emerald-700/70'
-                                                          : 'hl-subtle border'
-                                                      } ${isPopped ? 'hl-set-row-pop' : ''}`}
-                                                    >
-                                                      <div className="flex items-center justify-center">
-                                                        <span className="w-6 h-6 rounded-md bg-slate-200/70 dark:bg-slate-800/90 flex items-center justify-center font-mono tabular-nums text-xs font-bold text-slate-700 dark:text-slate-200">
-                                                          {sIdx + 1}
-                                                        </span>
-                                                      </div>
-
-                                                      <div>
-                                                        <NumericSetInput
-                                                          allowDecimal
-                                                          maxDecimals={2}
-                                                          min={0}
-                                                          max={1500}
-                                                          ariaLabel={`Set ${sIdx + 1} load in ${weightUnit}`}
-                                                          value={formatWeightDisplay(
-                                                            setRow.weightKg
-                                                          )}
-                                                          onDraftValueChange={(val) => {
-                                                            if (val === undefined) return;
-                                                            pendingRowDraftsRef.current[
-                                                              setRow.id
-                                                            ] = {
-                                                              ...(pendingRowDraftsRef.current[
-                                                                setRow.id
-                                                              ] ?? {}),
-                                                              weightKg: parseWeightToKg(
-                                                                Math.max(0, val)
-                                                              ),
-                                                            };
-                                                          }}
-                                                          onCommitNumber={(val) => {
-                                                            if (val === undefined) return;
-                                                            const nextRow =
-                                                              mergeRowWithPendingDraft(setRow, {
-                                                                weightKg: parseWeightToKg(
-                                                                  Math.max(0, val)
-                                                                ),
-                                                              });
-                                                            void onUpsertSet(nextRow);
-                                                          }}
-                                                          className="w-full min-h-[44px] px-1.5 sm:px-2.5 py-1.5 text-center text-xs sm:text-sm font-mono tabular-nums font-semibold hl-input hl-num-input rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-600"
-                                                        />
-                                                      </div>
-
-                                                      <div>
-                                                        <NumericSetInput
-                                                          allowDecimal={false}
-                                                          maxDecimals={0}
-                                                          min={1}
-                                                          max={200}
-                                                          ariaLabel={`Set ${sIdx + 1} reps`}
-                                                          value={sanitizeReps(setRow.reps, 1)}
-                                                          onDraftValueChange={(val) => {
-                                                            if (val === undefined) return;
-                                                            pendingRowDraftsRef.current[
-                                                              setRow.id
-                                                            ] = {
-                                                              ...(pendingRowDraftsRef.current[
-                                                                setRow.id
-                                                              ] ?? {}),
-                                                              reps: sanitizeReps(val, 1),
-                                                            };
-                                                          }}
-                                                          onCommitNumber={(val) => {
-                                                            if (val === undefined) return;
-                                                            const nextRow =
-                                                              mergeRowWithPendingDraft(setRow, {
-                                                                reps: sanitizeReps(val, 1),
-                                                              });
-                                                            void onUpsertSet(nextRow);
-                                                          }}
-                                                          className="w-full min-h-[44px] px-1.5 sm:px-2.5 py-1.5 text-center text-xs sm:text-sm font-mono tabular-nums font-semibold hl-input hl-num-input rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-600"
-                                                        />
-                                                      </div>
-
-                                                      {/* Color-Coded Effort Selector Dropdown */}
-                                                      <div>
-                                                        <select
-                                                          aria-label={`Set ${sIdx + 1} Reps in Reserve`}
-                                                          value={
-                                                            hasMatchingOption
-                                                              ? setRow.rir
-                                                              : Math.min(
-                                                                  4,
-                                                                  Math.max(
-                                                                    0,
-                                                                    Math.round(setRow.rir)
-                                                                  )
-                                                                )
-                                                          }
-                                                          onChange={(e) => {
-                                                            const nextRir = sanitizeRir(
-                                                              Number(e.target.value),
-                                                              2
-                                                            );
-                                                            const nextRow =
-                                                              mergeRowWithPendingDraft(setRow, {
-                                                                rir: nextRir,
-                                                              });
-                                                            void onUpsertSet(nextRow);
-                                                          }}
-                                                          title={rirVisual.badgeLabel}
-                                                          className={`w-full min-h-[44px] px-1 sm:px-2 py-1.5 text-center text-xs font-mono tabular-nums font-bold border rounded-lg appearance-none sm:appearance-auto focus:outline-none focus:ring-2 transition-colors ${rirVisual.selectClasses}`}
-                                                        >
-                                                          {RIR_OPTIONS.map((opt) => (
-                                                            <option
-                                                              key={opt.value}
-                                                              value={opt.value}
-                                                              className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
-                                                            >
-                                                              {opt.shortLabel}
-                                                            </option>
-                                                          ))}
-                                                        </select>
-                                                      </div>
-
-                                                      {/* Optional RPE Input Field (Shown when requested or populated) */}
-                                                      {showRpeCol && (
-                                                        <div>
-                                                          <NumericSetInput
-                                                            allowDecimal
-                                                            maxDecimals={1}
-                                                            min={1}
-                                                            max={10}
-                                                            placeholder="—"
-                                                            ariaLabel={`Set ${sIdx + 1} optional RPE (1 to 10)`}
-                                                            title="Optional Rate of Perceived Exertion (1–10)"
-                                                            value={
-                                                              setRow.rpe !== undefined &&
-                                                              setRow.rpe !== null
-                                                                ? sanitizeOptionalRpe(setRow.rpe) ??
-                                                                  ''
-                                                                : ''
-                                                            }
-                                                            onDraftValueChange={(val) => {
-                                                              pendingRowDraftsRef.current[
-                                                                setRow.id
-                                                              ] = {
-                                                                ...(pendingRowDraftsRef.current[
-                                                                  setRow.id
-                                                                ] ?? {}),
-                                                                rpe:
-                                                                  val === undefined
-                                                                    ? null
-                                                                    : sanitizeOptionalRpe(val) ??
-                                                                      null,
-                                                              };
-                                                            }}
-                                                            onCommitNumber={(val) => {
-                                                              const cleanRpe =
-                                                                val === undefined
-                                                                  ? null
-                                                                  : sanitizeOptionalRpe(val) ??
-                                                                    null;
-                                                              const nextRow =
-                                                                mergeRowWithPendingDraft(setRow, {
-                                                                  rpe: cleanRpe,
-                                                                });
-                                                              void onUpsertSet(nextRow);
-                                                            }}
-                                                            className={`w-full min-h-[44px] px-1 sm:px-2 py-1.5 text-center text-xs sm:text-sm font-mono tabular-nums font-semibold rounded-lg border hl-num-input focus:outline-none focus:ring-2 transition-colors placeholder:text-slate-400 dark:placeholder:text-slate-500 ${
-                                                              rpeHighEffort
-                                                                ? 'bg-amber-50 dark:bg-amber-950/70 border-amber-400 dark:border-amber-500/80 text-amber-900 dark:text-amber-200 focus:ring-amber-500'
-                                                                : rpeOptimalEffort
-                                                                ? 'bg-emerald-50/70 dark:bg-emerald-950/50 border-emerald-400/80 dark:border-emerald-600/80 text-emerald-900 dark:text-emerald-200 focus:ring-emerald-500'
-                                                                : 'hl-input focus:ring-sky-600'
-                                                            }`}
-                                                          />
-                                                        </div>
-                                                      )}
-
-                                                      <div className="flex justify-center">
-                                                        <button
-                                                          type="button"
-                                                          data-testid={`set-complete-btn-${setRow.id}`}
-                                                          onClick={() =>
-                                                            handleToggleComplete(
-                                                              setRow,
-                                                              ex.name,
-                                                              ex.restSeconds
-                                                            )
-                                                          }
-                                                          aria-label={
-                                                            setRow.completed
-                                                              ? `Mark set ${sIdx + 1} incomplete`
-                                                              : `Mark set ${sIdx + 1} complete`
-                                                          }
-                                                          className={`no-touch-delay min-h-[44px] min-w-[44px] rounded-xl flex items-center justify-center transition-colors ${
-                                                            setRow.completed
-                                                              ? 'bg-emerald-600 text-white hover:bg-emerald-500'
-                                                              : 'hl-input text-slate-400 dark:text-slate-500 hover:border-slate-500 hover:text-slate-700 dark:hover:text-slate-200'
-                                                          } ${isPopped ? 'hl-set-btn-pop' : ''}`}
-                                                        >
-                                                          <Check className="w-4 h-4" />
-                                                        </button>
-                                                      </div>
-                                                    </motion.div>
-                                                  );
-                                                })}
-                                              </AnimatePresence>
-                                            </div>
-                                          );
-                                        })()}
-
-                                        {/* Clean Expanded Row Footer with Add/Remove Set & Completion Status */}
-                                        <div className="pt-1 flex flex-wrap items-center justify-between gap-2">
-                                          <div className="flex items-center gap-2">
-                                            <button
-                                              type="button"
-                                              onClick={() => handleAddSet(ex)}
-                                              className="no-touch-delay min-h-[40px] px-3.5 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors flex items-center gap-1.5"
-                                            >
-                                              <Plus className="w-3.5 h-3.5" />
-                                              Add Set
-                                            </button>
-
-                                            {exSets.length > 1 && lastSet && (
-                                              <button
-                                                type="button"
-                                                onClick={() => onDeleteSet(lastSet.id)}
-                                                className="no-touch-delay min-h-[40px] px-3 py-1.5 text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-amber-700 dark:hover:text-amber-400 hover:bg-amber-50/70 dark:hover:bg-amber-950/30 rounded-lg transition-colors flex items-center gap-1"
-                                              >
-                                                <Trash2 className="w-3.5 h-3.5" />
-                                                Remove Last
-                                              </button>
-                                            )}
-                                          </div>
-
-                                          <span className="text-xs text-slate-500 dark:text-slate-400 font-mono tabular-nums">
-                                            {completedSetsCount} of {exSets.length} logged
-                                          </span>
-                                        </div>
-                                        </>
-                                      ))}
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
+                        return (
+                          <TrackExerciseCard
+                            key={ex.id}
+                            ex={ex}
+                            idx={idx}
+                            exSets={exSets}
+                            landmark={lm}
+                            prevList={prevList}
+                            recentThree={recentThree}
+                            cardioMode={cardioMode}
+                            cardioTimer={cardioTimer}
+                            isExpanded={isExpanded}
+                            isFocused={focusedExerciseId === ex.id}
+                            isHistoryModalOpen={isHistoryModalOpen}
+                            cardPopDirection={cardPopDirection}
+                            poppedSetId={poppedSetId}
+                            weightUnit={weightUnit}
+                            showAdvancedRpe={showAdvancedRpe}
+                            shouldReduceMotion={Boolean(shouldReduceMotion)}
+                            restDuration={restDuration}
+                            soundEnabled={soundEnabled}
+                            onToggleExpand={handleToggleExerciseExpand}
+                            onOpenHistoryModal={handleOpenExerciseHistory}
+                            onCloseHistoryModal={handleCloseExerciseHistory}
+                            onApplyPrevious={handleApplyPreviousToExercise}
+                            onStartRestCountdown={handleStartRestCountdownFromCard}
+                            onOpenFormHelp={handleOpenFormHelpFromCard}
+                            onRemoveExercise={onRemoveExerciseFromActiveWorkout}
+                            onAddSet={handleAddSet}
+                            onDeleteSet={onDeleteSet}
+                            onToggleSetComplete={handleToggleComplete}
+                            onCardAnimationEnd={handleCardAnimationEnd}
+                            formatWeightDisplay={formatWeightDisplay}
+                            parseWeightToKg={parseWeightToKg}
+                            onCommitWeight={handleCommitWeight}
+                            onDraftWeight={handleDraftWeight}
+                            onCommitReps={handleCommitReps}
+                            onDraftReps={handleDraftReps}
+                            onCommitRir={handleCommitRir}
+                            onCommitRpe={handleCommitRpe}
+                            onDraftRpe={handleDraftRpe}
+                            onUpdateCardioTimer={updateCardioTimer}
+                            onCompleteCardioTimer={handleCompleteCardioTimer}
+                            canRemove={currentDayPlan.exercises.length > 1}
+                          />
+                        );
+                      })}
                     </div>
                   </div>
                 );
@@ -4939,6 +4208,243 @@ export const Page2TrackSets: React.FC<Page2TrackSetsProps> = ({
             </>
           )}
         </>
+      )}
+
+      {/* START TODAY'S WORKOUT CHOOSER MODAL: Start Custom Workout OR Select Any Hypertrophy / Saved Template */}
+      {isStartChoiceModalOpen && (
+        <div
+          data-testid="start-workout-choice-modal"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setIsStartChoiceModalOpen(false);
+            }
+          }}
+          className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="start-workout-choice-title"
+        >
+          <div className="hl-card w-full max-w-2xl max-h-[90vh] rounded-t-3xl sm:rounded-3xl flex flex-col overflow-hidden shadow-xl">
+            <div className="px-5 sm:px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-4 shrink-0">
+              <div>
+                <h2
+                  id="start-workout-choice-title"
+                  className="text-base sm:text-lg font-bold text-slate-900 dark:text-white"
+                >
+                  Start Today&apos;s Workout
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Build a workout of your choice from scratch or select a hypertrophy template
+                </p>
+              </div>
+              <button
+                type="button"
+                data-testid="close-start-workout-choice-btn"
+                onClick={() => setIsStartChoiceModalOpen(false)}
+                className="no-touch-delay min-h-[42px] min-w-[42px] rounded-xl flex items-center justify-center text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800"
+                aria-label="Close start workout dialog"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-6">
+              {/* OPTION 1: START A WORKOUT OF YOUR CHOICE */}
+              <section
+                data-testid="start-choice-custom-section"
+                className="space-y-3 pb-5 border-b border-slate-200/80 dark:border-slate-800"
+              >
+                <div className="space-y-0.5">
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                    01. Start a Workout of Your Choice
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Open a clean, un-preloaded session and pick any movements you want to train today.
+                  </p>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+                  <input
+                    type="text"
+                    data-testid="start-choice-custom-title-input"
+                    value={startChoiceCustomTitle}
+                    onChange={(e) => setStartChoiceCustomTitle(e.target.value)}
+                    placeholder="Optional session name (e.g., Upper Push, Leg Day)..."
+                    className="flex-1 min-h-[44px] px-3.5 py-2 text-xs sm:text-sm hl-input rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-600"
+                  />
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      data-testid="start-choice-custom-btn"
+                      onClick={async () => {
+                        const chosenName =
+                          startChoiceCustomTitle.trim() || "Today's Custom Workout";
+                        await onStartQuickWorkout(chosenName);
+                        setIsStartChoiceModalOpen(false);
+                        setIsAddExerciseOpen(true);
+                      }}
+                      className="no-touch-delay flex-1 sm:flex-initial min-h-[44px] px-4 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs sm:text-sm font-semibold transition-colors inline-flex items-center justify-center gap-1.5 whitespace-nowrap"
+                    >
+                      <Plus className="w-4 h-4 shrink-0" />
+                      <span>Pick Exercises &amp; Start</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      data-testid="start-choice-blank-only-btn"
+                      onClick={async () => {
+                        const chosenName =
+                          startChoiceCustomTitle.trim() || "Today's Custom Workout";
+                        await onStartQuickWorkout(chosenName);
+                        setIsStartChoiceModalOpen(false);
+                      }}
+                      className="no-touch-delay min-h-[44px] px-3.5 py-2.5 rounded-xl hl-subtle border text-slate-700 dark:text-slate-200 hover:border-sky-500 text-xs sm:text-sm font-semibold transition-colors inline-flex items-center justify-center whitespace-nowrap"
+                    >
+                      <span>Blank Session</span>
+                    </button>
+                  </div>
+                </div>
+              </section>
+
+              {/* OPTION 2: USE A TEMPLATE (ALL RP HYPERTROPHY + BUILT-IN + CUSTOM TEMPLATES) */}
+              <section data-testid="start-choice-templates-section" className="space-y-3.5">
+                <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
+                  <div className="space-y-0.5">
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                      02. Use a Workout Template
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      Includes all RP Hypertrophy split days, specialized hypertrophy programs, and saved routines.
+                    </p>
+                  </div>
+                  <span className="text-xs font-mono tabular-nums text-slate-500 dark:text-slate-400 shrink-0">
+                    {startChoiceTemplates.length} available
+                  </span>
+                </div>
+
+                {/* Filter Tabs & Search */}
+                <div className="space-y-2.5">
+                  <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-100 dark:bg-slate-800/90 overflow-x-auto no-scrollbar">
+                    {(
+                      [
+                        { id: 'all', label: `All (${templates.length})` },
+                        { id: 'rp', label: 'RP Hypertrophy' },
+                        { id: 'starter', label: 'Starter & Fitness' },
+                        { id: 'custom', label: 'My Templates' },
+                      ] as const
+                    ).map((tab) => (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        data-testid={`start-choice-filter-${tab.id}`}
+                        onClick={() => setStartChoiceFilter(tab.id)}
+                        className={`no-touch-delay min-h-[38px] px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 ${
+                          startChoiceFilter === tab.id
+                            ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
+                            : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                        }`}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="relative">
+                    <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="search"
+                      data-testid="start-choice-template-search"
+                      value={startChoiceSearch}
+                      onChange={(e) => setStartChoiceSearch(e.target.value)}
+                      placeholder="Search RP Hypertrophy days, muscle groups, or exercises..."
+                      className="w-full min-h-[42px] pl-9 pr-3.5 py-2 text-xs sm:text-sm hl-input rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-600"
+                    />
+                  </div>
+                </div>
+
+                {/* Template Rows */}
+                {startChoiceTemplates.length === 0 ? (
+                  <div className="py-8 text-center space-y-2">
+                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                      No templates match your current filter.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStartChoiceFilter('all');
+                        setStartChoiceSearch('');
+                      }}
+                      className="no-touch-delay min-h-[38px] px-3.5 py-1.5 rounded-xl hl-subtle border text-xs font-semibold text-sky-600 dark:text-sky-400 whitespace-nowrap"
+                    >
+                      Show All Templates
+                    </button>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-slate-200/80 dark:divide-slate-800">
+                    {startChoiceTemplates.map((tpl) => {
+                      const totalSets = tpl.exercises.reduce((sum, ex) => sum + ex.sets, 0);
+                      const previewNames = tpl.exercises
+                        .slice(0, 3)
+                        .map((ex) => ex.name)
+                        .join(' · ');
+                      const extraCount = Math.max(0, tpl.exercises.length - 3);
+
+                      return (
+                        <div
+                          key={tpl.id}
+                          data-testid={`start-choice-template-row-${tpl.id}`}
+                          className="py-3.5 first:pt-1 last:pb-1 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                        >
+                          <div className="min-w-0 space-y-0.5">
+                            <p className="text-sm font-bold text-slate-900 dark:text-white truncate">
+                              {tpl.name}
+                            </p>
+                            <p className="text-xs font-mono tabular-nums text-slate-500 dark:text-slate-400 truncate">
+                              {tpl.splitType} · {tpl.exercises.length} exercises · {totalSets} sets
+                            </p>
+                            {previewNames && (
+                              <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                                {previewNames}
+                                {extraCount > 0 ? ` · +${extraCount} more` : ''}
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setWorkoutHelpTarget(buildHelpTargetFromTemplate(tpl))
+                              }
+                              className="no-touch-delay min-h-[42px] px-3 py-1.5 text-xs font-semibold hl-subtle border text-sky-600 dark:text-sky-400 hover:border-sky-500 rounded-xl transition-colors inline-flex items-center gap-1 whitespace-nowrap"
+                              title={`Movement guide for ${tpl.name}`}
+                            >
+                              <BookOpen className="w-3.5 h-3.5 shrink-0" />
+                              <span>Guide</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              data-testid={`start-choice-template-btn-${tpl.id}`}
+                              onClick={async () => {
+                                await onStartStandaloneTemplate(tpl);
+                                setIsStartChoiceModalOpen(false);
+                              }}
+                              className="no-touch-delay min-h-[42px] px-4 py-1.5 text-xs font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
+                            >
+                              <Play className="w-3.5 h-3.5 shrink-0" />
+                              <span>Use Template</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* UNIFIED WORKOUT SELECTOR MODAL: Pick Any Template, Split Day, or Empty Custom Workout */}
@@ -5331,4 +4837,5 @@ export const Page2TrackSets: React.FC<Page2TrackSetsProps> = ({
       />
     </div>
   );
-};
+});
+Page2TrackSets.displayName = 'Page2TrackSets';

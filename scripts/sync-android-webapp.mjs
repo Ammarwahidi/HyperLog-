@@ -20,9 +20,9 @@ const EXCLUDED_NAMES = new Set([
   'sw.js',
   'sw.js.map',
   'registerSW.js',
-  'pwa-512x512.png',
-  'pwa-maskable-512x512.png',
-  'apple-touch-icon.png',
+  'image_b0523bcd.png',
+  'image_e17b3842.png',
+  'Screenshot_2026-10-27-11-52-09-562_com.android.chrome_c6e0a3bc.jpg',
 ]);
 
 function shouldSkipEntry(entryName) {
@@ -59,4 +59,31 @@ if (fs.existsSync(manifestPath)) {
   fs.copyFileSync(manifestPath, path.join(androidAssetsWebDir, 'apk-manifest.json'));
 }
 
-console.log(`[sync-android-webapp] Synced compiled Web UI into ${androidAssetsWebDir}`);
+// Verify index.html, manifest.webmanifest, CSS, and JS bundles match dist/ 1:1
+const requiredRootFiles = ['index.html', 'manifest.webmanifest', 'pwa-192x192.png', 'pwa-512x512.png'];
+for (const file of requiredRootFiles) {
+  const target = path.join(androidAssetsWebDir, file);
+  if (!fs.existsSync(target)) {
+    console.error(`[sync-android-webapp] Missing required asset in webapp/: ${file}`);
+    process.exit(1);
+  }
+}
+
+const distAssetsDir = path.join(distDir, 'assets');
+const androidAssetsSubDir = path.join(androidAssetsWebDir, 'assets');
+const expectedBundles = fs
+  .readdirSync(distAssetsDir)
+  .filter((f) => f.endsWith('.js') || f.endsWith('.css'));
+
+for (const bundle of expectedBundles) {
+  const srcSize = fs.statSync(path.join(distAssetsDir, bundle)).size;
+  const destPath = path.join(androidAssetsSubDir, bundle);
+  if (!fs.existsSync(destPath) || fs.statSync(destPath).size !== srcSize) {
+    console.error(`[sync-android-webapp] Bundle mismatch for ${bundle}`);
+    process.exit(1);
+  }
+}
+
+console.log(
+  `[sync-android-webapp] Verified & synced ${expectedBundles.length} CSS/JS bundles + index.html + manifest.webmanifest into ${androidAssetsWebDir}`
+);

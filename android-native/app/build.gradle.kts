@@ -20,7 +20,7 @@ android {
         // targetSdk 35 = Android 15 (latest security & edge-to-edge display rules)
         targetSdk = 35
         // Increment versionCode every time we build a new release APK
-        versionCode = 16
+        versionCode = 18
         versionName = "4.0.0"
     }
 

@@ -32,7 +32,26 @@ interface ExercisePickerModalProps {
   title?: string;
 }
 
-export const ExercisePickerModal: React.FC<ExercisePickerModalProps> = ({
+const pickerHaystackCache = new WeakMap<LibraryExercise, string>();
+
+function getPickerSearchHaystack(
+  ex: LibraryExercise,
+  exModality: ExerciseModality,
+  landmarks: Record<MuscleId, MuscleLandmark>
+): string {
+  const cached = pickerHaystackCache.get(ex);
+  if (cached !== undefined) return cached;
+  const primaryName = landmarks[ex.primaryMuscle]?.name.toLowerCase() ?? '';
+  const shortName = landmarks[ex.primaryMuscle]?.shortName.toLowerCase() ?? '';
+  const secNames = ex.secondaryMuscles
+    .map((m) => landmarks[m]?.shortName.toLowerCase() ?? '')
+    .join(' ');
+  const built = `${ex.name} ${ex.description} ${ex.equipment} ${ex.majorGroup} ${exModality} ${primaryName} ${shortName} ${secNames}`.toLowerCase();
+  pickerHaystackCache.set(ex, built);
+  return built;
+}
+
+export const ExercisePickerModal: React.FC<ExercisePickerModalProps> = React.memo(({
   isOpen,
   onClose,
   exercises,
@@ -95,12 +114,7 @@ export const ExercisePickerModal: React.FC<ExercisePickerModalProps> = ({
         return false;
       }
       if (tokens.length === 0) return true;
-      const primaryName = landmarks[ex.primaryMuscle]?.name.toLowerCase() ?? '';
-      const shortName = landmarks[ex.primaryMuscle]?.shortName.toLowerCase() ?? '';
-      const secNames = ex.secondaryMuscles
-        .map((m) => landmarks[m]?.shortName.toLowerCase() ?? '')
-        .join(' ');
-      const haystack = `${ex.name} ${ex.description} ${ex.equipment} ${ex.majorGroup} ${exModality} ${primaryName} ${shortName} ${secNames}`.toLowerCase();
+      const haystack = getPickerSearchHaystack(ex, exModality, landmarks);
       return tokens.every((tok) => haystack.includes(tok));
     });
 
@@ -594,4 +608,5 @@ export const ExercisePickerModal: React.FC<ExercisePickerModalProps> = ({
       </div>
     </div>
   );
-};
+});
+ExercisePickerModal.displayName = 'ExercisePickerModal';

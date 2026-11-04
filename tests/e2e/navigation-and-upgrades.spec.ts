@@ -18,6 +18,21 @@ async function assertAllButtonsHaveNoTouchDelay(page: Page, contextLabel: string
   ).toEqual([]);
 }
 
+async function startRpDay1TemplateFromTracker(page: Page) {
+  const openDaySetsBtn = page.getByTestId('quick-open-day-sets-btn');
+  await expect(openDaySetsBtn).toBeVisible();
+  await openDaySetsBtn.click();
+
+  const choiceModal = page.getByTestId('start-workout-choice-modal');
+  await expect(choiceModal).toBeVisible();
+  await expect(page.getByTestId('start-choice-custom-btn')).toBeVisible();
+  await expect(page.getByTestId('start-choice-template-btn-tpl_rp_split_day_1')).toBeVisible();
+  await assertAllButtonsHaveNoTouchDelay(page, 'Start Workout Choice Modal');
+
+  await page.getByTestId('start-choice-template-btn-tpl_rp_split_day_1').click();
+  await expect(choiceModal).toHaveCount(0);
+}
+
 test.describe('HyperLog v4.0 — Synchronized Navigation, Claymorphism Auth, Framer Motion Sets & PWA UI Suite', () => {
   test('UPG-01: Tracker <-> Settings tab navigation & universal no-touch-delay class on all buttons', async ({
     page,
@@ -56,10 +71,8 @@ test.describe('HyperLog v4.0 — Synchronized Navigation, Claymorphism Auth, Fra
   }) => {
     await page.goto('/');
 
-    // Open Day 1 Sets directly from the Tracker view
-    const openDaySetsBtn = page.getByTestId('quick-open-day-sets-btn');
-    await expect(openDaySetsBtn).toBeVisible();
-    await openDaySetsBtn.click();
+    // Start RP Hypertrophy Day 1 template from the un-preloaded Tracker chooser
+    await startRpDay1TemplateFromTracker(page);
 
     // Exercise Set Focus bar & unified Workout Session Card should be visible
     const focusBar = page.getByTestId('exercise-set-focus-bar');
@@ -318,6 +331,24 @@ test.describe('HyperLog v4.0 — Synchronized Navigation, Claymorphism Auth, Fra
     // Collapse Deep Analytics cleanly
     await toggleBtn.click();
     await expect(page.getByTestId('deep-analytics-panel')).toHaveCount(0);
+
+    // Verify Tracker starts with ZERO preloaded workout data and Start Today's Workout lets user start a custom workout or pick an RP hypertrophy template
+    await expect(page.getByTestId('daily-workout-progress-card')).toContainText(/No preloaded session/i);
+    await page.getByTestId('quick-open-day-sets-btn').click();
+    const choiceModal = page.getByTestId('start-workout-choice-modal');
+    await expect(choiceModal).toBeVisible();
+    await page.getByTestId('start-choice-filter-rp').click();
+    await expect(page.getByTestId('start-choice-template-btn-tpl_rp_split_day_1')).toBeVisible();
+    await expect(page.getByTestId('start-choice-template-btn-tpl_rp_split_day_6')).toBeVisible();
+
+    // Start a custom workout of user's choice -> opens Exercise Library Picker with zero preloaded sets
+    await page.getByTestId('start-choice-custom-title-input').fill('My Custom Push');
+    await page.getByTestId('start-choice-custom-btn').click();
+    await expect(choiceModal).toHaveCount(0);
+    await expect(page.getByRole('dialog', { name: /Add Exercise to My Custom Push/i })).toBeVisible();
+    await assertAllButtonsHaveNoTouchDelay(page, 'Tracker - Custom Workout Exercise Picker');
+    await page.getByRole('button', { name: 'Close exercise picker' }).click();
+    await expect(page.getByText(/My Custom Push · Ready When You Are/i)).toBeVisible();
   });
 
   test('UPG-08: Consolidated Health Integration sub-section in Settings & simplified main interface without duplicate sync controls', async ({
@@ -325,8 +356,8 @@ test.describe('HyperLog v4.0 — Synchronized Navigation, Claymorphism Auth, Fra
   }) => {
     await page.goto('/');
 
-    // 1. Open active workout sets on Tracker and verify Health Connect sync/export buttons are gone from main interface
-    await page.getByTestId('quick-open-day-sets-btn').click();
+    // 1. Select RP Hypertrophy Day 1 template on Tracker and verify Health Connect sync/export buttons are gone from main interface
+    await startRpDay1TemplateFromTracker(page);
     await page.getByTestId('toggle-pump-checkin-drawer-btn').click();
     await expect(page.getByRole('button', { name: /Sync Health Connect/i })).toHaveCount(0);
     await expect(page.getByRole('button', { name: /Export Health JSON/i })).toHaveCount(0);
@@ -372,8 +403,8 @@ test.describe('HyperLog v4.0 — Synchronized Navigation, Claymorphism Auth, Fra
   }) => {
     await page.goto('/');
 
-    // 1. Active Workout on Tracker: 7-day strip & optional RPE column collapsed by default
-    await page.getByTestId('quick-open-day-sets-btn').click();
+    // 1. Active Workout on Tracker: select RP Hypertrophy Day 1 template; 7-day strip & optional RPE column collapsed by default
+    await startRpDay1TemplateFromTracker(page);
     const dayStripBtn = page.getByTestId('toggle-active-day-strip-btn');
     await expect(dayStripBtn).toHaveAttribute('aria-expanded', 'false');
     await expect(page.locator('[aria-label$="optional RPE (1 to 10)"]')).toHaveCount(0);
@@ -434,12 +465,24 @@ test.describe('HyperLog v4.0 — Synchronized Navigation, Claymorphism Auth, Fra
     );
     await assertAllButtonsHaveNoTouchDelay(page, 'Library - Filters Expanded');
 
-    // 5. Wellness: Calm "Today's Daily Balance" card up front, secondary macros tucked away
+    // 5. Wellness: Bento Box "Today's Balance" Hero with 3 circular rings + 7 Bento Grid cards up front, secondary macros tucked away
     await (isMobile
       ? page.getByTestId('mobile-nav-tab-wellness')
       : page.getByTestId('nav-tab-wellness')
     ).click();
     await expect(page.getByTestId('wellness-daily-balance-card')).toBeVisible();
+    await expect(page.getByTestId('hero-ring-nourishment')).toBeVisible();
+    await expect(page.getByTestId('hero-ring-protein')).toBeVisible();
+    await expect(page.getByTestId('hero-ring-hydration')).toBeVisible();
+    await expect(page.getByTestId('wellness-bento-grid')).toBeVisible();
+    await expect(page.getByTestId('wellness-dropdown-meal-slots')).toBeVisible();
+    await expect(page.getByTestId('bento-meals-food-search-input')).toBeVisible();
+    await expect(page.getByTestId('wellness-bento-indian-meals')).toBeVisible();
+    await expect(page.getByTestId('wellness-dropdown-hydration')).toBeVisible();
+    await expect(page.getByTestId('wellness-bento-weight-status')).toBeVisible();
+    await expect(page.getByTestId('wellness-dropdown-breathwork')).toBeVisible();
+    await expect(page.getByTestId('wellness-bento-sleep-calm')).toBeVisible();
+    await expect(page.getByTestId('wellness-bento-sleep-energy')).toBeVisible();
     await expect(page.getByTestId('wellness-macro-details-panel')).toHaveCount(0);
     await expect(page.getByTestId('wellness-food-search-input')).toBeHidden();
 
@@ -460,14 +503,14 @@ test.describe('HyperLog v4.0 — Synchronized Navigation, Claymorphism Auth, Fra
     await assertAllButtonsHaveNoTouchDelay(page, 'Wellness - Nutrition Progressive Disclosure');
   });
 
-  test('UPG-10: Exercise History icon & mini-modal toggle (recent 3 setLogs) + signed Build 16 APK verification', async ({
+  test('UPG-10: Exercise History icon & mini-modal toggle (recent 3 setLogs) + signed Build 18 APK verification', async ({
     page,
     request,
   }) => {
     await page.goto('/');
 
-    // 1. Open active workout sets on Tracker; verify History icon button is directly on the compact .hl-card row
-    await page.getByTestId('quick-open-day-sets-btn').click();
+    // 1. Select RP Hypertrophy Day 1 template on Tracker; verify History icon button is directly on the compact .hl-card row
+    await startRpDay1TemplateFromTracker(page);
     const firstStrengthCard = page.locator('[data-testid^="strength-card-"]').first();
     await expect(firstStrengthCard).toHaveClass(/hl-card/);
 
@@ -514,11 +557,11 @@ test.describe('HyperLog v4.0 — Synchronized Navigation, Claymorphism Auth, Fra
     await page.getByTestId('close-exercise-history-modal-btn').click();
     await expect(miniModal).toHaveCount(0);
 
-    // 4. Verify freshly compiled & signed standalone Android APK (Build 16) manifest & binary stream
+    // 4. Verify freshly compiled & signed standalone Android APK (Build 18) manifest & binary stream
     const manifestRes = await request.get('/api/download/manifest');
     expect(manifestRes.ok()).toBeTruthy();
     const manifestJson = await manifestRes.json();
-    expect(manifestJson.versionCode).toBe(16);
+    expect(manifestJson.versionCode).toBe(18);
 
     const apkHeadRes = await request.get('/api/download/apk/v4.0/HyperLog-v4.0-claymorphism-release.apk');
     expect(apkHeadRes.ok()).toBeTruthy();
@@ -534,7 +577,7 @@ test.describe('HyperLog v4.0 — Synchronized Navigation, Claymorphism Auth, Fra
     page,
   }) => {
     await page.goto('/');
-    await page.getByTestId('quick-open-day-sets-btn').click();
+    await startRpDay1TemplateFromTracker(page);
 
     const sessionList = page.getByTestId('workout-session-card');
     await expect(sessionList).toBeVisible();
@@ -722,7 +765,7 @@ test.describe('HyperLog v4.0 — Synchronized Navigation, Claymorphism Auth, Fra
         'anatomy'
       );
     });
-    await expect(page.getByTestId('anatomy-landmarks-dropdown')).toBeVisible();
+    await expect(page.getByTestId('anatomy-calm-summary-card')).toBeVisible();
     // Web-only "Get HyperLog on Your Android Phone (.APK)" banner is automatically hidden inside Standalone APK
     await expect(page.getByText('Get HyperLog on Your Android Phone (.APK)')).toHaveCount(0);
 
@@ -732,7 +775,7 @@ test.describe('HyperLog v4.0 — Synchronized Navigation, Claymorphism Auth, Fra
       );
     });
     await expect(
-      page.getByText('Native Android Standalone App Active (v4.0.0 · Build 16)')
+      page.getByText('Native Android Standalone App Active (v4.0.0 · Build 18)')
     ).toBeVisible();
 
     const hcBtn = page.getByTestId('settings-open-native-health-connect-btn');

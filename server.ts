@@ -1485,7 +1485,7 @@ async function startServer() {
       appName: 'HyperLog',
       packageId: 'com.hyperlog.rp',
       version: '4.0.0',
-      versionCode: 14,
+      versionCode: 18,
       uiArchitecture: 'Claymorphism 3D Pastel, Pastel Glass & Midnight Clay',
       dayZeroCleanSlate: true,
       minSdk: 26,
@@ -1511,7 +1511,7 @@ async function startServer() {
     res.json({
       ...baseManifest,
       version: String(baseManifest.version || '4.0.0'),
-      versionCode: Number(baseManifest.versionCode) || 14,
+      versionCode: Number(baseManifest.versionCode) || 18,
       uiArchitecture: String(
         baseManifest.uiArchitecture || 'Claymorphism 3D Pastel, Pastel Glass & Midnight Clay'
       ),
@@ -1594,8 +1594,16 @@ async function startServer() {
     app.use(
       express.static(distPath, {
         setHeaders: (res, filePath) => {
-          if (filePath.endsWith('index.html') || filePath.endsWith('sw.js')) {
+          if (
+            filePath.endsWith('index.html') ||
+            filePath.endsWith('sw.js') ||
+            filePath.endsWith('manifest.webmanifest')
+          ) {
             res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+          } else if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+          } else {
+            res.setHeader('Cache-Control', 'public, max-age=86400');
           }
         },
       })

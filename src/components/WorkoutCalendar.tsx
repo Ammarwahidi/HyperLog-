@@ -343,7 +343,7 @@ export const WorkoutCalendar: React.FC<WorkoutCalendarProps> = ({
     if (generatingPdf || selectedSessions.length === 0) return;
     setGeneratingPdf(true);
     try {
-      const pdfBlob = generateDateWorkoutPdfBlob({
+      const pdfBlob = await generateDateWorkoutPdfBlob({
         dateIso: selectedDateIso,
         sessions: selectedSessions,
         landmarks,
@@ -371,11 +371,11 @@ export const WorkoutCalendar: React.FC<WorkoutCalendarProps> = ({
     }
   };
 
-  const handleDownloadDatePdf = () => {
+  const handleDownloadDatePdf = async () => {
     if (generatingPdf || selectedSessions.length === 0) return;
     setGeneratingPdf(true);
     try {
-      const pdfBlob = generateDateWorkoutPdfBlob({
+      const pdfBlob = await generateDateWorkoutPdfBlob({
         dateIso: selectedDateIso,
         sessions: selectedSessions,
         landmarks,

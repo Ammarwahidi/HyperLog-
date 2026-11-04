@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, lazy, startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   BookMarked,
@@ -14,11 +14,10 @@ import {
   Heart,
   Settings,
   ShieldCheck,
-  Sparkles,
   User as UserIcon,
   X,
 } from 'lucide-react';
-import { onAuthStateChanged, type User as FirebaseUser } from 'firebase/auth';
+import type { User as FirebaseUser } from 'firebase/auth';
 import {
   ActiveStandaloneSession,
   ActiveWorkoutRunState,
@@ -50,10 +49,6 @@ import {
   INITIAL_WORKOUT_PLAN,
   MESOCYCLE_WEEKS,
 } from './data/rpPlanData';
-import {
-  INITIAL_EXERCISE_LIBRARY,
-  INITIAL_WORKOUT_TEMPLATES,
-} from './data/exerciseCatalog';
 import {
   clearSyncOutbox,
   computeWidgetProgressSnapshot,
@@ -99,6 +94,7 @@ import {
   computeSetLogsParityChecksum,
   sanitizeSetLogEntry,
 } from './utils/setLogNumeric';
+import { computeSetLogsParityChecksumAsync } from './utils/checksumWorkerClient';
 import {
   buildHistoryRecordFromSessionLogs,
   downloadBlobFile,
@@ -117,27 +113,16 @@ import {
   triggerAndroidHaptic,
 } from './utils/nativeAndroidBridge';
 import { PastWorkoutExerciseDraft } from './components/WorkoutCalendar';
-import { Page1Anatomy } from './components/Page1Anatomy';
 import { Page2TrackSets } from './components/Page2TrackSets';
-import { Page3Workouts } from './components/Page3Workouts';
-import { PageLibrary } from './components/PageLibrary';
-import { PageWellnessHub, WellnessSubTab } from './components/PageWellnessHub';
-import { PageSettings } from './components/PageSettings';
-import { PageWorkoutComplete } from './components/PageWorkoutComplete';
-import {
-  downloadAndUnpackStartupTrainingPackage,
-  PackageDownloadProgress,
-  verifyTrainingPackageInstalled,
-} from './utils/trainingPackageManager';
+import type { WellnessSubTab } from './components/PageWellnessHub';
+import type { PackageDownloadProgress } from './utils/trainingPackageManager';
 import { OfflineIndicator, PWAInstallButton } from './components/PWAInstallButton';
 import {
+  LiveWorkoutClock,
   MinimizedWorkoutBar,
-  formatGlobalWorkoutClock,
+  computeElapsedFromRunState,
 } from './components/MinimizedWorkoutBar';
 import { ExpandableInfoDropdown } from './components/ExpandableInfoDropdown';
-import { TechnicalGuideModal } from './components/TechnicalGuideModal';
-import { GlassmorphismDesignGuideModal } from './components/GlassmorphismDesignGuideModal';
-import { ClaymorphismDesignStudioModal } from './components/ClaymorphismDesignStudioModal';
 import {
   initializeDayZeroTelemetry,
   logTelemetryEvent,
@@ -154,16 +139,63 @@ import {
 } from './utils/apkDownload';
 import { playTimerSetTone } from './utils/timerAudio';
 import { fetchOnlineCatalogDirect } from './utils/onlineCatalogMapper';
-import { auth } from './firebase';
-import {
+import type {
   ComplianceAuditEntry,
   UserAccountProfile,
   UserPrivacyConsentSettings,
-  bootstrapAndLoadUserGovernance,
-  readEncryptedVaultPartition,
-  syncEncryptedVaultPartition,
 } from './services/userManagementService';
-import { UserAuthAndPrivacyModal } from './components/UserAuthAndPrivacyModal';
+
+const loadPage1Anatomy = () =>
+  import('./components/Page1Anatomy').then((m) => ({ default: m.Page1Anatomy }));
+const loadPage3Workouts = () =>
+  import('./components/Page3Workouts').then((m) => ({ default: m.Page3Workouts }));
+const loadPageLibrary = () =>
+  import('./components/PageLibrary').then((m) => ({ default: m.PageLibrary }));
+const loadPageWellnessHub = () =>
+  import('./components/PageWellnessHub').then((m) => ({ default: m.PageWellnessHub }));
+const loadPageSettings = () =>
+  import('./components/PageSettings').then((m) => ({ default: m.PageSettings }));
+const loadPageWorkoutComplete = () =>
+  import('./components/PageWorkoutComplete').then((m) => ({ default: m.PageWorkoutComplete }));
+
+const Page1Anatomy = lazy(loadPage1Anatomy);
+const Page3Workouts = lazy(loadPage3Workouts);
+const PageLibrary = lazy(loadPageLibrary);
+const PageWellnessHub = lazy(loadPageWellnessHub);
+const PageSettings = lazy(loadPageSettings);
+const PageWorkoutComplete = lazy(loadPageWorkoutComplete);
+
+const TechnicalGuideModal = lazy(() =>
+  import('./components/TechnicalGuideModal').then((m) => ({ default: m.TechnicalGuideModal }))
+);
+const GlassmorphismDesignGuideModal = lazy(() =>
+  import('./components/GlassmorphismDesignGuideModal').then((m) => ({
+    default: m.GlassmorphismDesignGuideModal,
+  }))
+);
+const ClaymorphismDesignStudioModal = lazy(() =>
+  import('./components/ClaymorphismDesignStudioModal').then((m) => ({
+    default: m.ClaymorphismDesignStudioModal,
+  }))
+);
+const UserAuthAndPrivacyModal = lazy(() =>
+  import('./components/UserAuthAndPrivacyModal').then((m) => ({
+    default: m.UserAuthAndPrivacyModal,
+  }))
+);
+
+let hasPreloadedTabChunks = false;
+function preloadPrimaryTabChunks(): void {
+  if (hasPreloadedTabChunks) return;
+  hasPreloadedTabChunks = true;
+  void Promise.allSettled([
+    loadPage1Anatomy(),
+    loadPage3Workouts(),
+    loadPageLibrary(),
+    loadPageWellnessHub(),
+    loadPageSettings(),
+  ]);
+}
 
 function parseDefaultRepTarget(repRange: string): number {
   const match = repRange.match(/\d+/);
@@ -219,14 +251,6 @@ const THEME_META_COLOR: Record<AppTheme, string> = {
   [AppTheme.Graphite]: '#121316',
 };
 
-function computeElapsedFromRunState(run: ActiveWorkoutRunState | null): number {
-  if (!run || !run.isActive) return 0;
-  const base = Math.max(0, Math.floor(run.accumulatedSeconds || 0));
-  if (run.isPaused) return base;
-  const delta = Math.max(0, Math.floor((Date.now() - run.lastResumedAtMs) / 1000));
-  return base + delta;
-}
-
 export default function App() {
   const [activeTab, setActiveTab] = useState<AppTab>(AppTab.TrackSets);
   const [optimisticTab, setOptimisticTab] = useState<AppTab | null>(null);
@@ -250,10 +274,8 @@ export default function App() {
   const [savedCustomMeals, setSavedCustomMeals] = useState<SavedCustomMeal[]>([]);
   const [appPreferences, setAppPreferences] = useState<AppPreferences>(DEFAULT_APP_PREFERENCES);
   const [syncOutbox, setSyncOutbox] = useState<SyncOutboxEvent[]>([]);
-  const [exerciseLibrary, setExerciseLibrary] =
-    useState<LibraryExercise[]>(INITIAL_EXERCISE_LIBRARY);
-  const [workoutTemplates, setWorkoutTemplates] =
-    useState<WorkoutTemplate[]>(INITIAL_WORKOUT_TEMPLATES);
+  const [exerciseLibrary, setExerciseLibrary] = useState<LibraryExercise[]>([]);
+  const [workoutTemplates, setWorkoutTemplates] = useState<WorkoutTemplate[]>([]);
   const [workoutHistory, setWorkoutHistory] = useState<WorkoutHistoryRecord[]>([]);
   const [wellbeingByDate, setWellbeingByDate] = useState<Record<string, WellbeingDailyRecord>>({});
   const [isSyncingOnline, setIsSyncingOnline] = useState<boolean>(false);
@@ -261,7 +283,6 @@ export default function App() {
     useState<ActiveStandaloneSession | null>(null);
   const [activeWorkoutRunState, setActiveWorkoutRunState] =
     useState<ActiveWorkoutRunState | null>(null);
-  const [globalElapsedSeconds, setGlobalElapsedSeconds] = useState<number>(0);
   const [trackFocusNonce, setTrackFocusNonce] = useState<number>(0);
   const [trackerRefreshNonce, setTrackerRefreshNonce] = useState<number>(0);
   const [completedWorkoutView, setCompletedWorkoutView] = useState<{
@@ -378,9 +399,7 @@ export default function App() {
     syncAndroidTheme(theme);
   }, [theme]);
 
-  const [totalLibraryCatalogCount, setTotalLibraryCatalogCount] = useState<number>(
-    INITIAL_EXERCISE_LIBRARY.length
-  );
+  const [totalLibraryCatalogCount, setTotalLibraryCatalogCount] = useState<number>(870);
   const [isHydratingFullLibrary, setIsHydratingFullLibrary] = useState<boolean>(false);
   const [wellnessInitialSubTab, setWellnessInitialSubTab] =
     useState<WellnessSubTab>('wellbeing');
@@ -407,7 +426,6 @@ export default function App() {
             state.activeWorkoutRunState.mode === 'schedule'
         ) || Boolean(options?.preserveScheduleSelection && prev)
       );
-      setGlobalElapsedSeconds(computeElapsedFromRunState(state.activeWorkoutRunState));
       setExerciseLibrary(state.exerciseLibrary);
       setTotalLibraryCatalogCount(
         state.totalExerciseLibraryCount ?? state.exerciseLibrary.length
@@ -430,6 +448,9 @@ export default function App() {
       baseTemplates: WorkoutTemplate[]
     ) => {
       try {
+        const { downloadAndUnpackStartupTrainingPackage } = await import(
+          './utils/trainingPackageManager'
+        );
         const res = await downloadAndUnpackStartupTrainingPackage({
           forceRedownload,
           existingExercises: baseExercises,
@@ -456,30 +477,26 @@ export default function App() {
   }, [activeTab]);
 
   useEffect(() => {
-    setGlobalElapsedSeconds(computeElapsedFromRunState(activeWorkoutRunState));
     const keepScreenAwake = Boolean(
       activeWorkoutRunState?.isActive && !activeWorkoutRunState?.isPaused
     );
     setAndroidKeepScreenOn(keepScreenAwake);
-    if (!activeWorkoutRunState?.isActive || activeWorkoutRunState.isPaused) {
-      return;
-    }
-    const id = window.setInterval(() => {
-      setGlobalElapsedSeconds(computeElapsedFromRunState(activeWorkoutRunState));
-    }, 1000);
-    return () => window.clearInterval(id);
   }, [activeWorkoutRunState]);
 
   const refreshUserGovernance = useCallback(async (targetUser?: FirebaseUser | null) => {
-    const activeUser = targetUser !== undefined ? targetUser : auth.currentUser;
-    if (!activeUser) {
-      setUserProfile(null);
-      setUserConsent(null);
-      setUserAuditLogs([]);
-      setRequiresMfaChallenge(false);
-      return;
-    }
     try {
+      const [{ auth }, { bootstrapAndLoadUserGovernance }] = await Promise.all([
+        import('./firebase'),
+        import('./services/userManagementService'),
+      ]);
+      const activeUser = targetUser !== undefined ? targetUser : auth.currentUser;
+      if (!activeUser) {
+        setUserProfile(null);
+        setUserConsent(null);
+        setUserAuditLogs([]);
+        setRequiresMfaChallenge(false);
+        return;
+      }
       const gov = await bootstrapAndLoadUserGovernance(activeUser);
       setUserProfile(gov.profile);
       setUserConsent(gov.consent);
@@ -501,6 +518,9 @@ export default function App() {
     let isMounted = true;
     let idleCallbackId: number | null = null;
     let fallbackTimerId: number | null = null;
+    let preloadTimerId: number | null = null;
+    let unsubscribeAuth: (() => void) | null = null;
+    let hydratedUidRef: string | null | undefined = undefined;
 
     const cancelDeferredHydration = () => {
       if (idleCallbackId !== null && typeof window !== 'undefined' && 'cancelIdleCallback' in window) {
@@ -513,16 +533,20 @@ export default function App() {
         window.clearTimeout(fallbackTimerId);
         fallbackTimerId = null;
       }
+      if (preloadTimerId !== null) {
+        window.clearTimeout(preloadTimerId);
+        preloadTimerId = null;
+      }
     };
 
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+    const hydrateNamespace = async (uid: string | null, userObj: FirebaseUser | null) => {
       if (!isMounted) return;
       cancelDeferredHydration();
-      setFirebaseUser(user);
-      const namespaceId = user ? user.uid : 'guest';
-      await setActiveUserStorageNamespace(user ? user.uid : null);
+      hydratedUidRef = uid;
+      const namespaceId = uid ?? 'guest';
+      await setActiveUserStorageNamespace(uid);
 
-      // Phase 1 (Fast Critical Path): Hydrate first 10 prioritized exercises + initialize Day-Zero telemetry
+      // Phase 1 (Fast Critical Path): Hydrate first 10 prioritized exercises immediately without waiting on Firebase SDK
       const fastState = await measureAsyncMetric(
         'startup',
         'PHASE1_DB_FAST_HYDRATION',
@@ -552,12 +576,17 @@ export default function App() {
           setTotalLibraryCatalogCount(fullLibrary.length);
           setIsHydratingFullLibrary(false);
 
+          const { verifyTrainingPackageInstalled } = await import(
+            './utils/trainingPackageManager'
+          );
           const verifiedInstalled = await verifyTrainingPackageInstalled();
           if (!isMounted) return;
           if (!verifiedInstalled || !fastState.trainingPackageStatus?.installed) {
             void runStartupPackageDownload(false, fullLibrary, fastState.workoutTemplates);
           }
-          await refreshUserGovernance(user);
+          if (userObj) {
+            await refreshUserGovernance(userObj);
+          }
         } catch {
           if (isMounted) {
             setIsHydratingFullLibrary(false);
@@ -572,20 +601,69 @@ export default function App() {
         idleCallbackId = winWithIdle.requestIdleCallback(
           () => {
             void runDeferredLibraryAndBundleHydration();
+            if (isMounted) preloadPrimaryTabChunks();
           },
-          { timeout: 600 }
+          { timeout: 400 }
         );
       } else {
         fallbackTimerId = window.setTimeout(() => {
           void runDeferredLibraryAndBundleHydration();
-        }, 180);
+          if (isMounted) preloadPrimaryTabChunks();
+        }, 150);
       }
+    };
+
+    let cachedUid: string | null = null;
+    try {
+      const rawCachedUid = window.localStorage.getItem('hyperlog_last_auth_uid');
+      cachedUid = rawCachedUid && rawCachedUid.trim().length > 0 ? rawCachedUid : null;
+    } catch {
+      cachedUid = null;
+    }
+
+    // Immediate offline-first boot before Firebase chunk is downloaded
+    void hydrateNamespace(cachedUid, null).then(() => {
+      if (!isMounted) return;
+      window.setTimeout(() => {
+        if (!isMounted) return;
+        void Promise.all([import('firebase/auth'), import('./firebase')])
+          .then(([{ onAuthStateChanged }, { auth }]) => {
+            if (!isMounted) return;
+            unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+              if (!isMounted) return;
+              setFirebaseUser(user);
+              const nextUid = user ? user.uid : null;
+              try {
+                if (nextUid) {
+                  window.localStorage.setItem('hyperlog_last_auth_uid', nextUid);
+                } else {
+                  window.localStorage.removeItem('hyperlog_last_auth_uid');
+                }
+              } catch {
+                // Ignore storage restrictions
+              }
+              if (hydratedUidRef !== nextUid) {
+                await hydrateNamespace(nextUid, user);
+              } else if (user) {
+                await refreshUserGovernance(user);
+              } else {
+                setUserProfile(null);
+                setUserConsent(null);
+                setUserAuditLogs([]);
+                setRequiresMfaChallenge(false);
+              }
+            });
+          })
+          .catch(() => {
+            // Offline mode continues cleanly without Firebase network reachability
+          });
+      }, 120);
     });
 
     return () => {
       isMounted = false;
       cancelDeferredHydration();
-      unsubscribe();
+      unsubscribeAuth?.();
     };
   }, [applyDatabaseSnapshot, runStartupPackageDownload, refreshUserGovernance]);
 
@@ -607,7 +685,8 @@ export default function App() {
 
     parityCheckRunningRef.current = true;
     try {
-      const inMemoryChecksum = computeSetLogsParityChecksum(setLogsRef.current);
+      const inMemoryChecksum = await computeSetLogsParityChecksumAsync(setLogsRef.current);
+      if (pendingWritesRef.current > 0) return;
       const result = await verifyAndRepairDatabaseParity({
         activeWeek,
         activeDay,
@@ -620,7 +699,6 @@ export default function App() {
 
       if (!result.inSync && result.freshState && pendingWritesRef.current === 0) {
         applyDatabaseSnapshot(result.freshState, { preserveScheduleSelection: true });
-        setTrackerRefreshNonce((n) => n + 1);
         recordWidgetUpdateTrigger('Offline Storage Synced');
       }
     } catch {
@@ -641,20 +719,21 @@ export default function App() {
     applyDatabaseSnapshot,
   ]);
 
+  const runBackgroundParityCheckRef = useRef(runBackgroundParityCheck);
+  useEffect(() => {
+    runBackgroundParityCheckRef.current = runBackgroundParityCheck;
+  }, [runBackgroundParityCheck]);
+
   useEffect(() => {
     if (!isLoaded) return;
 
-    const initialTimer = window.setTimeout(() => {
-      void runBackgroundParityCheck();
-    }, 600);
-
     const intervalId = window.setInterval(() => {
-      void runBackgroundParityCheck();
-    }, 12000);
+      void runBackgroundParityCheckRef.current();
+    }, 45000);
 
     const handleVisibilityOrFocus = () => {
       if (typeof document === 'undefined' || document.visibilityState === 'visible') {
-        void runBackgroundParityCheck();
+        void runBackgroundParityCheckRef.current();
       }
     };
 
@@ -663,13 +742,12 @@ export default function App() {
     document.addEventListener('visibilitychange', handleVisibilityOrFocus);
 
     return () => {
-      window.clearTimeout(initialTimer);
       window.clearInterval(intervalId);
       window.removeEventListener('focus', handleVisibilityOrFocus);
       window.removeEventListener('storage', handleVisibilityOrFocus);
       document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
     };
-  }, [isLoaded, runBackgroundParityCheck]);
+  }, [isLoaded]);
 
   const handleForceRefreshTracker = useCallback(async (): Promise<{
     totalSets: number;
@@ -756,7 +834,6 @@ export default function App() {
           templateSessionId: opts.templateSessionId,
         };
     setActiveWorkoutRunState(nextRun);
-    setGlobalElapsedSeconds(computeElapsedFromRunState(nextRun));
     if (shouldReset) {
       playTimerSetTone(appPreferences.soundOnTimer !== false);
     }
@@ -806,13 +883,11 @@ export default function App() {
       };
     }
     setActiveWorkoutRunState(nextRun);
-    setGlobalElapsedSeconds(computeElapsedFromRunState(nextRun));
     await saveActiveWorkoutRunState(nextRun);
   };
 
   const handleStopGlobalWorkoutTimer = async () => {
     setActiveWorkoutRunState(null);
-    setGlobalElapsedSeconds(0);
     await saveActiveWorkoutRunState(null);
   };
 
@@ -1239,6 +1314,9 @@ export default function App() {
       const without = prev.filter((t) => t.id !== template.id);
       return [...without, template].sort((a, b) => {
         if (a.category !== b.category) return a.category === 'Custom' ? -1 : 1;
+        const aRp = a.id.startsWith('tpl_rp_') || a.name.startsWith('RP Hypertrophy') ? 1 : 0;
+        const bRp = b.id.startsWith('tpl_rp_') || b.name.startsWith('RP Hypertrophy') ? 1 : 0;
+        if (aRp !== bRp) return bRp - aRp;
         return a.name.localeCompare(b.name);
       });
     });
@@ -1490,7 +1568,12 @@ export default function App() {
       startedAt: new Date().toISOString(),
       exercises: [],
     };
-    await saveActiveStandaloneSession(session);
+    pendingWritesRef.current += 1;
+    try {
+      await saveActiveStandaloneSession(session);
+    } finally {
+      pendingWritesRef.current = Math.max(0, pendingWritesRef.current - 1);
+    }
     setIsScheduleDaySelected(false);
     setActiveStandaloneSession(session);
     await activateGlobalWorkoutTimer({
@@ -1805,7 +1888,6 @@ export default function App() {
     setIsScheduleDaySelected(false);
 
     setActiveWorkoutRunState(null);
-    setGlobalElapsedSeconds(0);
     await saveActiveWorkoutRunState(null);
 
     recordWidgetUpdateTrigger(`Workout Finished (${finalized.title})`);
@@ -1991,7 +2073,7 @@ export default function App() {
 
   const handleShareSingleWorkoutPdf = useCallback(
     async (record: WorkoutHistoryRecord) => {
-      const pdfBlob = generateDateWorkoutPdfBlob({
+      const pdfBlob = await generateDateWorkoutPdfBlob({
         dateIso: record.date,
         sessions: [record],
         landmarks,
@@ -2171,6 +2253,7 @@ export default function App() {
 
   const handleSyncEncryptedCloudVault = useCallback(async () => {
     if (!firebaseUser) return;
+    const { syncEncryptedVaultPartition } = await import('./services/userManagementService');
     await syncEncryptedVaultPartition({
       uid: firebaseUser.uid,
       chunkType: 'nutrition_wellbeing',
@@ -2215,6 +2298,7 @@ export default function App() {
 
   const handleRestoreEncryptedCloudVault = useCallback(async () => {
     if (!firebaseUser) return;
+    const { readEncryptedVaultPartition } = await import('./services/userManagementService');
     const nutChunk = await readEncryptedVaultPartition<{
       nutritionByDate?: Record<string, DailyNutritionRecord>;
       wellbeingByDate?: Record<string, WellbeingDailyRecord>;
@@ -2436,15 +2520,6 @@ export default function App() {
     if (typeof MutationObserver === 'undefined') return;
     const observer = new MutationObserver((mutations) => {
       for (const m of mutations) {
-        if (m.type === 'attributes' && m.target instanceof Element) {
-          if (
-            m.target.matches(INTERACTIVE_SELECTOR) &&
-            !m.target.classList.contains('no-touch-delay')
-          ) {
-            m.target.classList.add('no-touch-delay');
-          }
-          continue;
-        }
         for (let i = 0; i < m.addedNodes.length; i++) {
           const added = m.addedNodes[i];
           if (added.nodeType === Node.ELEMENT_NODE) {
@@ -2457,8 +2532,6 @@ export default function App() {
     observer.observe(observeRoot, {
       childList: true,
       subtree: true,
-      attributes: true,
-      attributeFilter: ['class'],
     });
     return () => observer.disconnect();
   }, []);
@@ -2482,7 +2555,7 @@ export default function App() {
   );
 
   const handleNavPressEnd = useCallback(() => {
-    setPressedNavKey(null);
+    setPressedNavKey((prev) => (prev === null ? prev : null));
   }, []);
 
   const handlePrimaryNavigationSelect = useCallback(
@@ -2532,6 +2605,9 @@ export default function App() {
             <img
               src="/pwa-192x192.png"
               alt="HyperLog"
+              width={32}
+              height={32}
+              decoding="async"
               referrerPolicy="no-referrer"
               className="w-8 h-8 rounded-lg object-cover shrink-0"
             />
@@ -2580,20 +2656,27 @@ export default function App() {
                 >
                   <span>{navItem.label}</span>
                   {navItem.id === AppTab.TrackSets && activeWorkoutRunState?.isActive && (
-                    <span className="ml-1.5 font-mono tabular-nums text-xs text-emerald-600 dark:text-emerald-400">
-                      · {formatGlobalWorkoutClock(globalElapsedSeconds)}
-                    </span>
+                    <LiveWorkoutClock
+                      runState={activeWorkoutRunState}
+                      prefix="· "
+                      className="ml-1.5 font-mono tabular-nums text-xs text-emerald-600 dark:text-emerald-400"
+                    />
                   )}
                 </button>
               );
             })}
           </nav>
 
-          {/* Zone 3: Account Security Vault + Settings Actions (Clay 3D Studio moved inside Settings) */}
-          <div className="flex items-center gap-2 shrink-0">
+          {/* Zone 3: User Profile Avatar + Minimal Settings Icon */}
+          <div className="flex items-center gap-2.5 shrink-0">
             <button
               type="button"
               data-testid="open-account-auth-btn"
+              aria-label={
+                firebaseUser
+                  ? `Account profile (${userProfile?.displayName || firebaseUser.displayName || 'User'})`
+                  : 'Sign In to HyperLog'
+              }
               data-pressed={pressedNavKey === 'auth' ? 'true' : 'false'}
               onPointerDown={(e) => handleNavPressStart('auth', e.pointerType)}
               onPointerUp={handleNavPressEnd}
@@ -2604,31 +2687,36 @@ export default function App() {
                 setPressedNavKey(null);
                 setIsAuthModalOpen(true);
               }}
-              className={`no-touch-delay hl-nav-press min-h-[42px] px-3.5 py-2 text-xs font-semibold rounded-xl border flex items-center gap-1.5 whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 ${
-                firebaseUser
-                  ? 'hl-subtle border-emerald-500/50 text-slate-900 dark:text-white'
-                  : 'bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white border-blue-600'
-              }`}
+              className="no-touch-delay hl-nav-press min-h-[42px] pl-1.5 pr-3 py-1 rounded-full hl-subtle border border-slate-200/90 dark:border-slate-700/80 hover:border-blue-500/60 flex items-center gap-2 whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
             >
-              {firebaseUser ? (
-                <>
-                  <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                  <span className="max-w-[110px] truncate">
-                    {userProfile?.displayName || firebaseUser.displayName || 'Account'}
-                  </span>
-                </>
-              ) : (
-                <>
-                  <UserIcon className="w-4 h-4 shrink-0" />
-                  <span>Sign In</span>
-                </>
-              )}
+              <span
+                className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                  firebaseUser
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-[#2563EB] text-white'
+                }`}
+              >
+                {firebaseUser ? (
+                  (userProfile?.displayName || firebaseUser.displayName || 'U')
+                    .trim()
+                    .charAt(0)
+                    .toUpperCase()
+                ) : (
+                  <UserIcon className="w-3.5 h-3.5" />
+                )}
+              </span>
+              <span className="text-xs font-semibold text-slate-800 dark:text-slate-100 max-w-[96px] truncate">
+                {firebaseUser
+                  ? userProfile?.displayName || firebaseUser.displayName || 'Account'
+                  : 'Sign In'}
+              </span>
             </button>
 
             <button
               type="button"
               data-testid="nav-tab-settings"
               aria-label="Settings"
+              title="Settings"
               data-pressed={pressedNavKey === 'settings' ? 'true' : 'false'}
               onPointerDown={(e) => handleNavPressStart('settings', e.pointerType)}
               onPointerUp={handleNavPressEnd}
@@ -2637,16 +2725,16 @@ export default function App() {
               onBlur={handleNavPressEnd}
               onClick={() => handlePrimaryNavigationSelect(AppTab.Settings)}
               aria-current={isSettingsActive ? 'page' : undefined}
-              className={`no-touch-delay hl-nav-press min-h-[42px] px-3.5 py-2 text-xs font-semibold rounded-xl border flex items-center gap-1.5 whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 ${
+              className={`no-touch-delay hl-nav-press min-h-[42px] min-w-[42px] p-2 rounded-full border flex items-center justify-center shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 ${
                 pressedNavKey === 'settings'
-                  ? 'bg-blue-600 text-white border-blue-500'
+                  ? 'bg-[#2563EB] text-white border-[#2563EB]'
                   : isSettingsActive && !completedWorkoutView
-                  ? 'bg-slate-900 dark:bg-blue-600 text-white border-slate-900 dark:border-blue-500'
-                  : 'hl-subtle text-slate-700 dark:text-slate-200 hover:border-slate-400 dark:hover:border-slate-600'
+                  ? 'bg-[#2563EB] text-white border-[#2563EB] shadow-xs'
+                  : 'hl-subtle border-slate-200/90 dark:border-slate-700/80 text-slate-700 dark:text-slate-200 hover:border-slate-400 dark:hover:border-slate-600'
               }`}
             >
-              <Settings className="w-4 h-4 shrink-0" />
-              <span className="hidden sm:inline">Settings</span>
+              <Settings className="w-4 h-4 shrink-0" strokeWidth={1.85} />
+              <span className="sr-only">Settings</span>
             </button>
           </div>
         </div>
@@ -2654,11 +2742,11 @@ export default function App() {
 
       {/* Main Content Container */}
       <main className="flex-1 w-full max-w-6xl mx-auto px-safe pt-4 pb-24 md:pb-12 space-y-5">
-        {/* Startup Training Resource Package Progress Strip (Game-Style Asset Unpack) */}
+        {/* Startup Training Resource Package Progress Strip (Non-layout-shifting floating toast) */}
         {packageDownloadProgress && (
           <div
             data-testid="startup-package-banner"
-            className="hl-card rounded-2xl px-4 py-3 space-y-2"
+            className="fixed left-3 right-3 sm:left-auto sm:right-6 sm:w-96 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] md:bottom-6 z-30 hl-card rounded-2xl px-4 py-3 space-y-2 shadow-lg pointer-events-none"
           >
             <div className="flex items-center justify-between gap-3 text-xs">
               <span className="font-semibold text-slate-900 dark:text-white truncate">
@@ -2767,34 +2855,36 @@ export default function App() {
         )}
 
         {!isLoaded ? (
-          <div className="py-20 text-center text-sm text-slate-500 dark:text-slate-400">
+          <div className="min-h-[70vh] py-20 text-center text-sm text-slate-500 dark:text-slate-400">
             Loading workout log…
           </div>
         ) : completedWorkoutView ? (
-          <PageWorkoutComplete
-            record={completedWorkoutView.record}
-            landmarks={landmarks}
-            weightUnit={nutritionGoals.weightUnit}
-            streakDays={widgetSnapshot.streakDays}
-            cardioMinutesLogged={completedWorkoutView.cardioMinutes}
-            onSharePdf={handleShareSingleWorkoutPdf}
-            onReturnToTracker={() => {
-              setCompletedWorkoutView(null);
-              setTrackSubView('log');
-              setActiveTab(AppTab.TrackSets);
-            }}
-            onOpenCalendar={() => {
-              setCompletedWorkoutView(null);
-              setTrackSubView('calendar');
-              setActiveTab(AppTab.TrackSets);
-            }}
-            onOpenWellness={() => {
-              setCompletedWorkoutView(null);
-              setActiveTab(AppTab.Calories);
-            }}
-          />
+          <Suspense fallback={null}>
+            <PageWorkoutComplete
+              record={completedWorkoutView.record}
+              landmarks={landmarks}
+              weightUnit={nutritionGoals.weightUnit}
+              streakDays={widgetSnapshot.streakDays}
+              cardioMinutesLogged={completedWorkoutView.cardioMinutes}
+              onSharePdf={handleShareSingleWorkoutPdf}
+              onReturnToTracker={() => {
+                setCompletedWorkoutView(null);
+                setTrackSubView('log');
+                setActiveTab(AppTab.TrackSets);
+              }}
+              onOpenCalendar={() => {
+                setCompletedWorkoutView(null);
+                setTrackSubView('calendar');
+                setActiveTab(AppTab.TrackSets);
+              }}
+              onOpenWellness={() => {
+                setCompletedWorkoutView(null);
+                setActiveTab(AppTab.Calories);
+              }}
+            />
+          </Suspense>
         ) : (
-          <>
+          <Suspense fallback={null}>
             {activeTab === AppTab.TrackSets && (
               <Page2TrackSets
                 key={`tracker_refresh_${trackerRefreshNonce}`}
@@ -2810,7 +2900,6 @@ export default function App() {
                 onSelectScheduleDay={handleSelectScheduleDay}
                 activeStandaloneSession={activeStandaloneSession}
                 activeWorkoutRunState={activeWorkoutRunState}
-                globalElapsedSeconds={globalElapsedSeconds}
                 onStartGlobalWorkout={handleStartGlobalWorkout}
                 onTogglePauseGlobalWorkout={handleTogglePauseGlobalWorkout}
                 onStopGlobalWorkoutTimer={handleStopGlobalWorkoutTimer}
@@ -3024,16 +3113,16 @@ export default function App() {
                 onOpenClayDesignStudio={() => setIsClayStudioOpen(true)}
               />
             )}
-          </>
+          </Suspense>
         )}
       </main>
 
-      {/* Mobile Fixed 5-Tab Bottom Navigation Bar (Press-Prioritized Feedback, >= 48px Hitboxes) */}
+      {/* Mobile Fixed 5-Tab Glass Bottom Navigation Bar (Thin Icons, Royal Blue Active State & Bottom Indicator) */}
       <nav
-        className="md:hidden fixed bottom-0 left-0 right-0 z-40 pb-safe-bottom hl-header backdrop-blur-md border-t"
+        className="md:hidden fixed bottom-0 left-0 right-0 z-40 pb-safe-bottom hl-header backdrop-blur-md border-t border-slate-200/80 dark:border-slate-800/80 shadow-[0_-4px_20px_rgba(15,23,42,0.04)]"
         aria-label="Mobile Navigation"
       >
-        <div className="grid grid-cols-5 items-center h-16 px-1.5 gap-1">
+        <div className="grid grid-cols-5 items-center h-16 px-2 gap-1">
           {[
             { id: AppTab.TrackSets, label: 'Tracker', Icon: Dumbbell, testId: 'mobile-nav-tab-tracker' },
             { id: AppTab.Anatomy, label: 'Anatomy', Icon: Activity, testId: 'mobile-nav-tab-anatomy' },
@@ -3057,25 +3146,25 @@ export default function App() {
                 onPointerLeave={handleNavPressEnd}
                 onBlur={handleNavPressEnd}
                 onClick={() => handlePrimaryNavigationSelect(id)}
-                className={`no-touch-delay hl-nav-press relative min-h-[48px] flex flex-col items-center justify-center rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 ${
+                className={`no-touch-delay hl-nav-press relative min-h-[50px] py-1.5 flex flex-col items-center justify-center rounded-2xl transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 ${
                   isPressed
-                    ? 'bg-blue-600/15 dark:bg-blue-400/20 text-blue-600 dark:text-blue-300 font-semibold'
+                    ? 'bg-[#2563EB]/12 dark:bg-blue-400/18 text-[#2563EB] dark:text-blue-400 font-semibold'
                     : active
-                    ? 'bg-blue-600/10 dark:bg-blue-500/15 text-blue-600 dark:text-blue-400 font-semibold'
-                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white active:bg-slate-200/70 dark:active:bg-slate-800/70'
+                    ? 'text-[#2563EB] dark:text-blue-400 font-semibold'
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white active:bg-slate-200/60 dark:active:bg-slate-800/60'
                 }`}
               >
                 <Icon
-                  className="w-5 h-5"
-                  strokeWidth={active || isPressed ? 2.45 : 1.9}
+                  className="w-5 h-5 transition-transform duration-150"
+                  strokeWidth={active || isPressed ? 2.15 : 1.55}
                 />
-                <span className="text-[10px] tracking-tight mt-0.5 whitespace-nowrap">
+                <span className="text-[11px] tracking-tight mt-0.5 whitespace-nowrap leading-tight">
                   {label}
                 </span>
                 {(active || isPressed) && (
                   <span
                     aria-hidden="true"
-                    className="absolute top-1 w-4 h-0.5 rounded-sm bg-blue-600 dark:bg-blue-400"
+                    className="mt-1 w-4 h-1 rounded-full bg-[#2563EB] dark:bg-blue-400 transition-all"
                   />
                 )}
               </button>
@@ -3088,7 +3177,7 @@ export default function App() {
       {showMinimizedWorkoutBar && activeWorkoutRunState && (
         <MinimizedWorkoutBar
           workoutTitle={activeWorkoutRunState.workoutTitle || activeSessionSetProgress.title}
-          elapsedSeconds={globalElapsedSeconds}
+          runState={activeWorkoutRunState}
           isPaused={activeWorkoutRunState.isPaused}
           completedSets={activeSessionSetProgress.completedSets}
           totalSets={activeSessionSetProgress.totalSets}
@@ -3104,58 +3193,65 @@ export default function App() {
 
       <OfflineIndicator />
 
-      {/* APK, Emulator & Local Backup Hub */}
-      <TechnicalGuideModal
-        isOpen={isGuideOpen}
-        onClose={() => setIsGuideOpen(false)}
-        onExportBackup={handleExportBackup}
-        onResetDefaults={handleResetDefaults}
-      />
+      {/* On-Demand Lazy Modals (mounted only when open so initial DOM & JS boot remain lightweight) */}
+      <Suspense fallback={null}>
+        {isGuideOpen && (
+          <TechnicalGuideModal
+            isOpen={isGuideOpen}
+            onClose={() => setIsGuideOpen(false)}
+            onExportBackup={handleExportBackup}
+            onResetDefaults={handleResetDefaults}
+          />
+        )}
 
-      {/* Claymorphism 3D APK UI Studio, 4-Screen Wireframes, Day-Zero Logging & Playwright QA */}
-      <ClaymorphismDesignStudioModal
-        isOpen={isClayStudioOpen}
-        onClose={() => setIsClayStudioOpen(false)}
-        currentTheme={theme}
-        onSelectTheme={(nextTheme) => {
-          setTheme(nextTheme);
-          logTelemetryEvent({
-            level: 'ACTION',
-            category: 'ui',
-            event: 'THEME_SWITCHED',
-            metadata: { theme: nextTheme },
-          });
-        }}
-        onResetAppToDayZero={handleResetDefaults}
-      />
+        {isClayStudioOpen && (
+          <ClaymorphismDesignStudioModal
+            isOpen={isClayStudioOpen}
+            onClose={() => setIsClayStudioOpen(false)}
+            currentTheme={theme}
+            onSelectTheme={(nextTheme) => {
+              setTheme(nextTheme);
+              logTelemetryEvent({
+                level: 'ACTION',
+                category: 'ui',
+                event: 'THEME_SWITCHED',
+                metadata: { theme: nextTheme },
+              });
+            }}
+            onResetAppToDayZero={handleResetDefaults}
+          />
+        )}
 
-      {/* Complete Glassmorphism UI Design Guide & Annotated 3-Screen Visual Mockup Studio */}
-      <GlassmorphismDesignGuideModal
-        isOpen={isGlassGuideOpen}
-        onClose={() => setIsGlassGuideOpen(false)}
-        currentTheme={theme}
-        onApplyPastelGlassTheme={() => setTheme(AppTheme.PastelGlass)}
-      />
+        {isGlassGuideOpen && (
+          <GlassmorphismDesignGuideModal
+            isOpen={isGlassGuideOpen}
+            onClose={() => setIsGlassGuideOpen(false)}
+            currentTheme={theme}
+            onApplyPastelGlassTheme={() => setTheme(AppTheme.PastelGlass)}
+          />
+        )}
 
-      {/* User Base Management, OAuth, MFA, Privacy & GDPR/CCPA Compliance Center */}
-      <UserAuthAndPrivacyModal
-        isOpen={isAuthModalOpen}
-        onClose={() => {
-          if (!requiresMfaChallenge) {
-            setIsAuthModalOpen(false);
-          }
-        }}
-        firebaseUser={firebaseUser}
-        profile={userProfile}
-        consent={userConsent}
-        auditLogs={userAuditLogs}
-        requiresMfaChallenge={requiresMfaChallenge}
-        onRefreshGovernance={() => refreshUserGovernance()}
-        onSyncEncryptedCloudVault={handleSyncEncryptedCloudVault}
-        onRestoreEncryptedCloudVault={handleRestoreEncryptedCloudVault}
-        onExportGdprJson={handleExportGdprJson}
-        onAccountErased={handleAccountErased}
-      />
+        {(isAuthModalOpen || requiresMfaChallenge) && (
+          <UserAuthAndPrivacyModal
+            isOpen={isAuthModalOpen || requiresMfaChallenge}
+            onClose={() => {
+              if (!requiresMfaChallenge) {
+                setIsAuthModalOpen(false);
+              }
+            }}
+            firebaseUser={firebaseUser}
+            profile={userProfile}
+            consent={userConsent}
+            auditLogs={userAuditLogs}
+            requiresMfaChallenge={requiresMfaChallenge}
+            onRefreshGovernance={() => refreshUserGovernance()}
+            onSyncEncryptedCloudVault={handleSyncEncryptedCloudVault}
+            onRestoreEncryptedCloudVault={handleRestoreEncryptedCloudVault}
+            onExportGdprJson={handleExportGdprJson}
+            onAccountErased={handleAccountErased}
+          />
+        )}
+      </Suspense>
     </div>
   );
 }

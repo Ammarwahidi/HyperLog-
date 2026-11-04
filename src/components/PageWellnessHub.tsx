@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import {
   AppPreferences,
   BiologicalSex,
@@ -15,8 +15,6 @@ import {
 } from '../types/workout';
 import { resolveTemplateModality } from '../data/allInOneFitnessCatalog';
 import { getTodayISO } from '../db/localStore';
-import { Page4Calories } from './Page4Calories';
-import { DailyNutritionWeightChart } from './DailyNutritionWeightChart';
 import { PastWorkoutExerciseDraft } from './WorkoutCalendar';
 import {
   buildHelpTargetFromTemplate,
@@ -39,11 +37,14 @@ import {
   Droplets,
   Heart,
   Minus,
+  Moon,
   Pause,
   Play,
   Plus,
   RotateCcw,
+  Scale,
   Search,
+  Sparkles,
   Timer,
   Utensils,
   Wind,
@@ -54,10 +55,34 @@ import {
   playTimerSetTone,
   playTimerStepTone,
 } from '../utils/timerAudio';
-import { IndianNutritionSection } from './IndianNutritionSection';
-import { IndianCatalogExplorerSection } from './IndianCatalogExplorerSection';
-import { BreathingTechniquesSection } from './BreathingTechniquesSection';
 import { ExpandableInfoDropdown } from './ExpandableInfoDropdown';
+import {
+  BentoCard,
+  NavigationTab,
+  ProgressRing,
+  SearchComponent,
+  Sparkline,
+} from './bento/BentoDesignSystem';
+
+const Page4Calories = lazy(() =>
+  import('./Page4Calories').then((m) => ({ default: m.Page4Calories }))
+);
+const DailyNutritionWeightChart = lazy(() =>
+  import('./DailyNutritionWeightChart').then((m) => ({ default: m.DailyNutritionWeightChart }))
+);
+const IndianNutritionSection = lazy(() =>
+  import('./IndianNutritionSection').then((m) => ({ default: m.IndianNutritionSection }))
+);
+const IndianCatalogExplorerSection = lazy(() =>
+  import('./IndianCatalogExplorerSection').then((m) => ({
+    default: m.IndianCatalogExplorerSection,
+  }))
+);
+const BreathingTechniquesSection = lazy(() =>
+  import('./BreathingTechniquesSection').then((m) => ({
+    default: m.BreathingTechniquesSection,
+  }))
+);
 
 export interface PageWellnessHubProps {
   wellbeingByDate: Record<string, WellbeingDailyRecord>;
@@ -214,10 +239,6 @@ const COMMON_FOOD_LOOKUP_LIST: CommonFoodDictionaryEntry[] = Object.values(
   COMMON_FOOD_LOOKUP_DICTIONARY
 );
 
-// Calm progressive-disclosure daily balance summary lives directly in PageWellnessHub
-
-// Breathwork audio and guided inhale/exhale patterns live in BreathingTechniquesSection.tsx
-
 function parseDurationSecondsFromReps(repsText: string): number {
   const clean = repsText.toLowerCase().trim();
   const minMatch = clean.match(/(\d+)\s*min/);
@@ -234,7 +255,7 @@ function formatTimerClock(totalSec: number): string {
   return `${String(mins).padStart(2, '0')}:${String(rem).padStart(2, '0')}`;
 }
 
-export const PageWellnessHub: React.FC<PageWellnessHubProps> = ({
+export const PageWellnessHub: React.FC<PageWellnessHubProps> = React.memo(({
   wellbeingByDate,
   onSaveWellbeing,
   templates,
@@ -275,6 +296,7 @@ export const PageWellnessHub: React.FC<PageWellnessHubProps> = ({
   const [quickServingMultiplier, setQuickServingMultiplier] = useState<number>(1);
   const [isQuickSearchExpanded, setIsQuickSearchExpanded] = useState<boolean>(false);
   const [showMacroDetails, setShowMacroDetails] = useState<boolean>(false);
+  const [showWeightChartDrawer, setShowWeightChartDrawer] = useState<boolean>(false);
   const [openQuickAddMealSlot, setOpenQuickAddMealSlot] = useState<MealEntry['mealType'] | null>(
     null
   );
@@ -333,7 +355,7 @@ export const PageWellnessHub: React.FC<PageWellnessHubProps> = ({
     () =>
       nutritionByDate[todayIso] ?? {
         date: todayIso,
-        bodyweightKg: preferences.calculatorProfile.weightKg || 82.7,
+        bodyweightKg: preferences.calculatorProfile.weightKg || 70,
         stepsCount: 8000,
         meals: [],
       },
@@ -360,6 +382,21 @@ export const PageWellnessHub: React.FC<PageWellnessHubProps> = ({
       ),
     [nutritionGoals.hydrationTargetMl, currentWellbeing.waterGoalMl, defaultHydrationGoalMl]
   );
+
+  const realWeightSparklinePoints = useMemo(() => {
+    const entries = Object.values(nutritionByDate)
+      .filter((rec) => Number.isFinite(rec.bodyweightKg) && rec.bodyweightKg > 0)
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .slice(-7)
+      .map((rec) => ({
+        label: rec.date.slice(5),
+        value: rec.bodyweightKg,
+      }));
+    if (entries.length === 0) {
+      return [{ label: todayIso.slice(5), value: todayNutritionRecord.bodyweightKg }];
+    }
+    return entries;
+  }, [nutritionByDate, todayIso, todayNutritionRecord.bodyweightKg]);
 
   const filteredQuickResults = useMemo(() => {
     const q = quickFoodQuery.trim().toLowerCase();
@@ -419,10 +456,10 @@ export const PageWellnessHub: React.FC<PageWellnessHubProps> = ({
 
   const readinessLabel =
     readinessScore >= 80
-      ? 'Well rested · Great day for steady movement'
+      ? 'Well rested • Great day for steady movement'
       : readinessScore >= 60
-      ? 'Steady energy · Move at a comfortable pace and sip water'
-      : 'Gentle recovery day · Favor stretching, walking, or calm breathing';
+      ? 'Steady energy • Move at a comfortable pace & sip water'
+      : 'Gentle recovery day • Favor stretching, walking, or calm breathing';
 
   const updateWellbeingPatch = async (patch: Partial<WellbeingDailyRecord>) => {
     await onSaveWellbeing({
@@ -837,7 +874,8 @@ export const PageWellnessHub: React.FC<PageWellnessHubProps> = ({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
+      {/* HORIZONTAL WELLNESS NAVIGATION MENU */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white tracking-tight">
             Wellness &amp; Recovery
@@ -849,7 +887,7 @@ export const PageWellnessHub: React.FC<PageWellnessHubProps> = ({
 
         <div className="flex items-center w-full lg:w-auto">
           <div
-            className="flex w-full lg:w-auto items-center gap-1 p-1 rounded-xl hl-subtle border overflow-x-auto no-scrollbar"
+            className="flex w-full lg:w-auto items-center gap-1.5 p-1.5 rounded-2xl bg-white/90 dark:bg-slate-900/90 border border-slate-200/85 dark:border-slate-800 shadow-xs overflow-x-auto no-scrollbar"
             role="tablist"
             aria-label="Wellness workspace sections"
           >
@@ -863,46 +901,42 @@ export const PageWellnessHub: React.FC<PageWellnessHubProps> = ({
                 { id: 'nutrition', label: 'Nutrition' },
               ] as const
             ).map((tab) => (
-              <button
+              <NavigationTab
                 key={tab.id}
-                type="button"
-                role="tab"
-                data-testid={`wellness-subtab-${tab.id}`}
-                aria-selected={subTab === tab.id}
+                id={tab.id}
+                label={tab.label}
+                active={subTab === tab.id}
+                testId={`wellness-subtab-${tab.id}`}
                 onClick={() => setSubTab(tab.id)}
-                className={`no-touch-delay min-h-[44px] px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 ${
-                  subTab === tab.id
-                    ? 'bg-sky-600 dark:bg-sky-500 text-white shadow-xs'
-                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                {tab.label}
-              </button>
+              />
             ))}
           </div>
         </div>
       </div>
 
       {statusToast && (
-        <div className="p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-700 text-xs font-semibold text-emerald-800 dark:text-emerald-200 flex items-center gap-2">
+        <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-700 text-xs font-semibold text-emerald-800 dark:text-emerald-200 flex items-center gap-2 shadow-xs">
           <Check className="w-4 h-4 shrink-0" />
           <span>{statusToast}</span>
         </div>
       )}
 
-      {/* CALM DAILY BALANCE SUMMARY (Progressive Disclosure — Shown on Overview) */}
+      {/* TODAY'S BALANCE – HERO SECTION (Shown on Overview) */}
       {subTab === 'wellbeing' && (
-        <section
-          data-testid="wellness-daily-balance-card"
-          aria-label="Today's daily balance summary"
-          className="hl-card rounded-2xl p-5 sm:p-6 bg-slate-50/90 dark:bg-slate-900/75 border border-slate-200/80 dark:border-slate-800 space-y-5"
+        <BentoCard
+          as="section"
+          variant="hero"
+          testId="wellness-daily-balance-card"
+          ariaLabel="Today's Balance summary"
+          className="p-5 sm:p-6 space-y-5"
         >
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="space-y-1">
-              <p className="text-xs font-medium text-sky-700 dark:text-sky-300">
-                Today&apos;s Daily Balance
-              </p>
-              <h2 className="text-base sm:text-lg font-semibold text-slate-900 dark:text-white">
+              <div className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Today&apos;s Balance</span>
+              </div>
+              <h2 className="text-base sm:text-xl font-bold text-slate-900 dark:text-white tracking-tight">
                 {readinessLabel}
               </h2>
             </div>
@@ -912,100 +946,49 @@ export const PageWellnessHub: React.FC<PageWellnessHubProps> = ({
               onClick={() =>
                 void updateWellbeingPatch({ waterMl: currentWellbeing.waterMl + 250 })
               }
-              className="no-touch-delay min-h-[42px] px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold transition-colors inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
+              className="no-touch-delay min-h-[44px] px-4 py-2.5 rounded-xl bg-[#2563EB] hover:bg-blue-700 text-white text-xs sm:text-sm font-bold shadow-sm transition-colors inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
             >
-              <Plus className="w-3.5 h-3.5 shrink-0" />
-              <span>Add 250 ml Water</span>
+              <Plus className="w-4 h-4 shrink-0" />
+              <span>+ Add 250 ml Water</span>
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-3 border-t border-slate-200/80 dark:border-slate-800">
-            <div className="space-y-1.5">
-              <div className="flex items-baseline justify-between gap-2 text-xs">
-                <span className="font-semibold text-slate-700 dark:text-slate-200">
-                  Nourishment
-                </span>
-                <span className="font-mono tabular-nums text-slate-600 dark:text-slate-300">
-                  <strong className="text-slate-900 dark:text-white">
-                    {todayMacroTotals.calories.toLocaleString()}
-                  </strong>{' '}
-                  / {nutritionGoals.targetCalories.toLocaleString()} kcal
-                </span>
-              </div>
-              <div className="h-2 rounded-full bg-slate-200/80 dark:bg-slate-800 overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-sky-500 dark:bg-sky-400 transition-all"
-                  style={{
-                    width: `${Math.min(
-                      100,
-                      Math.round(
-                        (todayMacroTotals.calories / Math.max(1, nutritionGoals.targetCalories)) *
-                          100
-                      )
-                    )}%`,
-                  }}
-                />
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <div className="flex items-baseline justify-between gap-2 text-xs">
-                <span className="font-semibold text-slate-700 dark:text-slate-200">Protein</span>
-                <span className="font-mono tabular-nums text-slate-600 dark:text-slate-300">
-                  <strong className="text-slate-900 dark:text-white">
-                    {todayMacroTotals.proteinG}
-                  </strong>{' '}
-                  / {nutritionGoals.proteinTargetG}g
-                </span>
-              </div>
-              <div className="h-2 rounded-full bg-slate-200/80 dark:bg-slate-800 overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-emerald-500 dark:bg-emerald-400 transition-all"
-                  style={{
-                    width: `${Math.min(
-                      100,
-                      Math.round(
-                        (todayMacroTotals.proteinG / Math.max(1, nutritionGoals.proteinTargetG)) *
-                          100
-                      )
-                    )}%`,
-                  }}
-                />
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <div className="flex items-baseline justify-between gap-2 text-xs">
-                <span className="font-semibold text-slate-700 dark:text-slate-200">Hydration</span>
-                <span className="font-mono tabular-nums text-slate-600 dark:text-slate-300">
-                  <strong className="text-slate-900 dark:text-white">
-                    {currentWellbeing.waterMl.toLocaleString()}
-                  </strong>{' '}
-                  / {hydrationGoalMl.toLocaleString()} ml
-                </span>
-              </div>
-              <div className="h-2 rounded-full bg-slate-200/80 dark:bg-slate-800 overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-teal-500 dark:bg-teal-400 transition-all"
-                  style={{
-                    width: `${Math.min(
-                      100,
-                      Math.round((currentWellbeing.waterMl / Math.max(500, hydrationGoalMl)) * 100)
-                    )}%`,
-                  }}
-                />
-              </div>
-            </div>
+          {/* 3 Independent Animated Circular Progress Indicators */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 pt-2">
+            <ProgressRing
+              label="Nourishment"
+              consumed={todayMacroTotals.calories}
+              target={nutritionGoals.targetCalories}
+              unit="kcal"
+              tone="orange"
+              testId="hero-ring-nourishment"
+            />
+            <ProgressRing
+              label="Protein"
+              consumed={todayMacroTotals.proteinG}
+              target={nutritionGoals.proteinTargetG}
+              unit="g"
+              tone="purple"
+              testId="hero-ring-protein"
+            />
+            <ProgressRing
+              label="Hydration"
+              consumed={currentWellbeing.waterMl}
+              target={hydrationGoalMl}
+              unit="ml"
+              tone="blue"
+              testId="hero-ring-hydration"
+            />
           </div>
 
-          <div className="pt-2 border-t border-slate-200/80 dark:border-slate-800 space-y-3">
+          <div className="pt-3 border-t border-slate-200/80 dark:border-slate-800/80 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <button
                 type="button"
                 data-testid="toggle-wellness-macro-details-btn"
                 aria-expanded={showMacroDetails}
                 onClick={() => setShowMacroDetails((prev) => !prev)}
-                className="no-touch-delay min-h-[38px] px-3 py-1.5 rounded-xl hl-subtle border text-xs font-semibold text-slate-700 dark:text-slate-200 hover:border-sky-400 transition-colors inline-flex items-center gap-1.5 whitespace-nowrap"
+                className="no-touch-delay min-h-[38px] px-3.5 py-1.5 rounded-xl bg-white/85 dark:bg-slate-800/80 border border-slate-200/90 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:border-blue-400 transition-colors inline-flex items-center gap-1.5 whitespace-nowrap"
               >
                 <span>
                   {showMacroDetails
@@ -1022,9 +1005,10 @@ export const PageWellnessHub: React.FC<PageWellnessHubProps> = ({
               <button
                 type="button"
                 onClick={() => setSubTab('nutrition')}
-                className="no-touch-delay min-h-[38px] px-3 py-1.5 rounded-xl text-xs font-semibold text-sky-700 dark:text-sky-300 hover:underline whitespace-nowrap"
+                className="no-touch-delay min-h-[38px] px-3 py-1.5 rounded-xl text-xs font-bold text-[#2563EB] dark:text-blue-400 hover:underline inline-flex items-center gap-1 whitespace-nowrap"
               >
-                Open Full Nutrition Log &rarr;
+                <span>Open Full Nutrition Log</span>
+                <ChevronRight className="w-3.5 h-3.5" />
               </button>
             </div>
 
@@ -1033,25 +1017,25 @@ export const PageWellnessHub: React.FC<PageWellnessHubProps> = ({
                 data-testid="wellness-macro-details-panel"
                 className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1 text-xs"
               >
-                <div className="p-3 rounded-xl bg-white/85 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80">
+                <div className="p-3 rounded-xl bg-white/90 dark:bg-slate-800/70 border border-slate-200/80 dark:border-slate-700/80">
                   <span className="text-slate-500 dark:text-slate-400 block">Carbs</span>
                   <span className="font-mono tabular-nums text-sm font-bold text-slate-900 dark:text-white mt-0.5 block">
                     {todayMacroTotals.carbsG} / {nutritionGoals.carbsTargetG}g
                   </span>
                 </div>
-                <div className="p-3 rounded-xl bg-white/85 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80">
+                <div className="p-3 rounded-xl bg-white/90 dark:bg-slate-800/70 border border-slate-200/80 dark:border-slate-700/80">
                   <span className="text-slate-500 dark:text-slate-400 block">Healthy Fats</span>
                   <span className="font-mono tabular-nums text-sm font-bold text-slate-900 dark:text-white mt-0.5 block">
                     {todayMacroTotals.fatG} / {nutritionGoals.fatTargetG}g
                   </span>
                 </div>
-                <div className="p-3 rounded-xl bg-white/85 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80">
+                <div className="p-3 rounded-xl bg-white/90 dark:bg-slate-800/70 border border-slate-200/80 dark:border-slate-700/80">
                   <span className="text-slate-500 dark:text-slate-400 block">Meals Today</span>
                   <span className="font-mono tabular-nums text-sm font-bold text-slate-900 dark:text-white mt-0.5 block">
                     {todayNutritionRecord.meals.length} logged
                   </span>
                 </div>
-                <div className="p-3 rounded-xl bg-white/85 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80">
+                <div className="p-3 rounded-xl bg-white/90 dark:bg-slate-800/70 border border-slate-200/80 dark:border-slate-700/80">
                   <span className="text-slate-500 dark:text-slate-400 block">Readiness</span>
                   <span className="font-mono tabular-nums text-sm font-bold text-emerald-700 dark:text-emerald-400 mt-0.5 block">
                     {readinessScore} / 100
@@ -1060,106 +1044,802 @@ export const PageWellnessHub: React.FC<PageWellnessHubProps> = ({
               </div>
             )}
           </div>
-        </section>
+        </BentoCard>
       )}
 
-      {/* DROPDOWN MENU: MEALS BY TIME OF DAY (Shown on Overview) */}
+      {/* BENTO BOX DASHBOARD LAYOUT (Shown on Overview) */}
       {subTab === 'wellbeing' && (
-      <ExpandableInfoDropdown
-        testId="wellness-dropdown-meal-slots"
-        title="Meals by Time of Day"
-        subtitle="Add breakfast, pre/post-workout fuel, dinner, or a simple snack at your own pace"
-        summaryRight={`${todayNutritionRecord.meals.length} logged · ${todayMacroTotals.calories} kcal`}
-        icon={<Utensils className="w-4 h-4 text-sky-600 dark:text-sky-400" />}
-        defaultOpen={false}
-      >
-        <section
-          data-testid="wellness-meal-slots-section"
-          aria-label="Daily nutrition tracking by meal type"
-          className="space-y-4"
+        <div
+          data-testid="wellness-bento-grid"
+          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-4 items-stretch"
         >
-          <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-200 dark:border-slate-800">
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Tap <strong>Quick Add</strong> next to any meal time to pick from your saved favorites
-            </p>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setSubTab('indian')}
-                className="no-touch-delay min-h-[38px] px-3 py-1.5 rounded-xl hl-subtle border text-xs font-semibold text-sky-600 dark:text-sky-400 hover:border-sky-500 flex items-center gap-1.5 whitespace-nowrap"
-              >
-                <Utensils className="w-3.5 h-3.5 shrink-0" />
-                <span>Indian Foods &amp; Recipes</span>
-              </button>
-              <span className="text-xs font-mono tabular-nums text-slate-500 dark:text-slate-400">
-                Today ({todayIso})
-              </span>
-            </div>
-          </div>
-
-          <div className="divide-y divide-slate-200/80 dark:divide-slate-800">
-            {MEAL_TYPE_SLOTS.map((slot) => {
-              const slotMeals = todayNutritionRecord.meals.filter((m) => m.mealType === slot.type);
-              const slotKcal = slotMeals.reduce((sum, m) => sum + m.calories, 0);
-              const slotProtein = slotMeals.reduce((sum, m) => sum + m.proteinG, 0);
-              const isMenuOpen = openQuickAddMealSlot === slot.type;
-
-              return (
-                <div
-                  key={slot.type}
-                  data-testid={`meal-slot-row-${slot.slug}`}
-                  className="py-3 first:pt-0 last:pb-0"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                          {slot.type}
-                        </h3>
-                        <span className="text-xs font-mono tabular-nums text-slate-500 dark:text-slate-400">
-                          {slotKcal > 0
-                            ? `${slotKcal.toLocaleString()} kcal · ${slotProtein}g P`
-                            : slot.subtitle}
-                        </span>
-                      </div>
-
-                      {slotMeals.length > 0 && (
-                        <div className="mt-1 space-y-0.5">
-                          {slotMeals.map((logged) => (
-                            <p
-                              key={logged.id}
-                              className="text-xs text-slate-600 dark:text-slate-300 font-mono tabular-nums truncate"
-                            >
-                              {logged.loggedAt} ·{' '}
-                              <span className="font-sans font-medium">{logged.name}</span> (
-                              {logged.calories} kcal · {logged.proteinG}g P)
-                            </p>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <button
-                      type="button"
-                      data-testid={`quick-add-btn-${slot.slug}`}
-                      aria-haspopup="dialog"
-                      aria-expanded={isMenuOpen}
-                      onClick={() => {
-                        setQuickAddModalSearch('');
-                        setOpenQuickAddMealSlot((prev) => (prev === slot.type ? null : slot.type));
-                      }}
-                      className="no-touch-delay min-h-[44px] px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0"
-                    >
-                      <Plus className="w-3.5 h-3.5 shrink-0" />
-                      <span>Quick Add</span>
-                    </button>
+          {/* A. Meals & Fast Food – Double Width (lg:col-span-8) */}
+          <BentoCard
+            as="section"
+            testId="wellness-dropdown-meal-slots"
+            ariaLabel="Meals & Fast Food"
+            className="md:col-span-2 lg:col-span-8 p-5 flex flex-col justify-between gap-4"
+          >
+            <div
+              data-testid="wellness-meal-slots-section"
+              className="space-y-4"
+            >
+              {/* Card Header */}
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-orange-50 dark:bg-orange-950/50 border border-orange-200/70 dark:border-orange-800/60 flex items-center justify-center text-[#F97316] shrink-0">
+                    <Utensils className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900 dark:text-white tracking-tight">
+                      Meals &amp; Fast Food
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      Log breakfast, lunch, dinner, or search everyday foods in one place
+                    </p>
                   </div>
                 </div>
-              );
-            })}
+
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-mono tabular-nums font-semibold text-slate-700 dark:text-slate-200">
+                    {todayNutritionRecord.meals.length} meals logged
+                  </span>
+                  <span className="px-2.5 py-1 rounded-lg bg-orange-50 dark:bg-orange-950/50 border border-orange-200/60 dark:border-orange-800/50 text-xs font-mono tabular-nums font-bold text-[#F97316]">
+                    {todayMacroTotals.calories.toLocaleString()} kcal
+                  </span>
+                </div>
+              </div>
+
+              {/* Quick Action Buttons for Breakfast, Lunch (Post-Workout), Dinner, Snack + Pre-Workout */}
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                {MEAL_TYPE_SLOTS.map((slot) => {
+                  const slotMeals = todayNutritionRecord.meals.filter(
+                    (m) => m.mealType === slot.type
+                  );
+                  const slotKcal = slotMeals.reduce((sum, m) => sum + m.calories, 0);
+                  const isMenuOpen = openQuickAddMealSlot === slot.type;
+                  const displayTitle =
+                    slot.type === 'Post-Workout'
+                      ? 'Lunch / Post'
+                      : slot.type === 'Pre-Workout'
+                      ? 'Pre-Workout'
+                      : slot.type;
+
+                  return (
+                    <div
+                      key={slot.type}
+                      data-testid={`meal-slot-row-${slot.slug}`}
+                      className="p-2.5 rounded-xl bg-slate-50/90 dark:bg-slate-800/50 border border-slate-200/75 dark:border-slate-800 flex flex-col justify-between gap-2"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                            {displayTitle}
+                          </span>
+                          {slotMeals.length > 0 && (
+                            <span className="text-[10px] font-mono tabular-nums text-emerald-600 dark:text-emerald-400 font-bold">
+                              {slotMeals.length}×
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                          {slotKcal > 0 ? `${slotKcal} kcal` : slot.subtitle}
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        data-testid={`quick-add-btn-${slot.slug}`}
+                        aria-haspopup="dialog"
+                        aria-expanded={isMenuOpen}
+                        onClick={() => {
+                          setQuickAddModalSearch('');
+                          setOpenQuickAddMealSlot((prev) =>
+                            prev === slot.type ? null : slot.type
+                          );
+                        }}
+                        className="no-touch-delay w-full min-h-[36px] px-2.5 py-1.5 rounded-lg bg-[#2563EB] hover:bg-blue-700 text-white text-xs font-semibold transition-colors inline-flex items-center justify-center gap-1 whitespace-nowrap"
+                      >
+                        <Plus className="w-3.5 h-3.5 shrink-0" />
+                        <span>Quick Add</span>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Embedded Quick Food Lookup Search inside Meals & Fast Food Card */}
+              <div className="pt-3 border-t border-slate-200/80 dark:border-slate-800 space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
+                  <div className="sm:col-span-7">
+                    <SearchComponent
+                      value={quickFoodQuery}
+                      onChange={setQuickFoodQuery}
+                      placeholder="Quick lookup (oats, eggs, chicken wrap, rice, banana)…"
+                      ariaLabel="Quick lookup food or meal"
+                      testId="bento-meals-food-search-input"
+                    />
+                  </div>
+                  <div className="sm:col-span-3">
+                    <select
+                      aria-label="Quick log meal slot"
+                      value={quickMealSlot}
+                      onChange={(e) => setQuickMealSlot(e.target.value as MealEntry['mealType'])}
+                      className="w-full min-h-[42px] px-2.5 text-xs font-semibold hl-input rounded-xl"
+                    >
+                      <option value="Breakfast">Breakfast</option>
+                      <option value="Pre-Workout">Pre-Workout</option>
+                      <option value="Post-Workout">Lunch / Post-Workout</option>
+                      <option value="Dinner">Dinner</option>
+                      <option value="Snack">Snack</option>
+                    </select>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <select
+                      aria-label="Serving size multiplier"
+                      value={quickServingMultiplier}
+                      onChange={(e) => setQuickServingMultiplier(Number(e.target.value) || 1)}
+                      className="w-full min-h-[42px] px-2 text-xs font-mono tabular-nums font-semibold hl-input rounded-xl"
+                    >
+                      <option value={0.5}>0.5×</option>
+                      <option value={1}>1×</option>
+                      <option value={1.5}>1.5×</option>
+                      <option value={2}>2×</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Compact Live Food Results Strip */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-44 overflow-y-auto pr-0.5">
+                  {filteredQuickResults.saved.slice(0, 4).map((meal) => {
+                    const scaledKcal = Math.round(meal.calories * quickServingMultiplier);
+                    const scaledP = Math.round(meal.proteinG * quickServingMultiplier);
+                    return (
+                      <div
+                        key={meal.id}
+                        data-testid={`quick-saved-meal-${meal.id}`}
+                        className="p-2.5 rounded-xl bg-slate-50/90 dark:bg-slate-800/50 border border-slate-200/75 dark:border-slate-800 flex items-center justify-between gap-2"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold text-slate-900 dark:text-white truncate">
+                            {meal.name}
+                          </p>
+                          <p className="text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400">
+                            {scaledKcal} kcal · {scaledP}g P
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void handleQuickLogFoodOrMeal({
+                              name: meal.name,
+                              mealType: meal.mealType,
+                              calories: meal.calories,
+                              proteinG: meal.proteinG,
+                              carbsG: meal.carbsG,
+                              fatG: meal.fatG,
+                              useSelectedSlot: false,
+                            })
+                          }
+                          aria-label={`Quick log ${meal.name}`}
+                          className="no-touch-delay min-h-[34px] px-2.5 py-1 rounded-lg bg-[#2563EB] hover:bg-blue-700 text-white text-xs font-semibold shrink-0 inline-flex items-center gap-1"
+                        >
+                          <Plus className="w-3 h-3" />
+                          <span>Add</span>
+                        </button>
+                      </div>
+                    );
+                  })}
+
+                  {filteredQuickResults.common.slice(0, 4).map((food) => {
+                    const scaledKcal = Math.round(food.calories * quickServingMultiplier);
+                    const scaledP = Math.round(food.proteinG * quickServingMultiplier);
+                    return (
+                      <div
+                        key={food.id}
+                        data-testid={`quick-common-food-${food.id}`}
+                        className="p-2.5 rounded-xl bg-slate-50/90 dark:bg-slate-800/50 border border-slate-200/75 dark:border-slate-800 flex items-center justify-between gap-2"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold text-slate-900 dark:text-white truncate">
+                            {food.name}
+                          </p>
+                          <p className="text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400">
+                            {scaledKcal} kcal · {scaledP}g P
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void handleQuickLogFoodOrMeal({
+                              name: food.name,
+                              mealType: food.defaultMealType,
+                              calories: food.calories,
+                              proteinG: food.proteinG,
+                              carbsG: food.carbsG,
+                              fatG: food.fatG,
+                              useSelectedSlot: true,
+                            })
+                          }
+                          aria-label={`Quick log ${food.name}`}
+                          className="no-touch-delay min-h-[34px] px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-blue-500 text-slate-800 dark:text-slate-100 text-xs font-semibold shrink-0 inline-flex items-center gap-1"
+                        >
+                          <Plus className="w-3 h-3" />
+                          <span>Add</span>
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Progressive Disclosure Dictionary Filter (Preserves UPG-09 hidden input invariant) */}
+                <div className="pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setIsQuickSearchExpanded((prev) => !prev)}
+                    aria-expanded={isQuickSearchExpanded}
+                    className="no-touch-delay text-[11px] font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 inline-flex items-center gap-1"
+                  >
+                    <span>
+                      {isQuickSearchExpanded
+                        ? 'Hide Advanced Dictionary Filter'
+                        : `Filter all ${COMMON_FOOD_LOOKUP_LIST.length} foods & ${savedCustomMeals.length} saved meals`}
+                    </span>
+                    {isQuickSearchExpanded ? (
+                      <ChevronUp className="w-3 h-3" />
+                    ) : (
+                      <ChevronDown className="w-3 h-3" />
+                    )}
+                  </button>
+
+                  {isQuickSearchExpanded && (
+                    <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                      <input
+                        type="text"
+                        data-testid="wellness-food-search-input"
+                        aria-label="Search saved custom meals and common food items"
+                        value={quickFoodQuery}
+                        onChange={(e) => setQuickFoodQuery(e.target.value)}
+                        placeholder="Filter full food dictionary…"
+                        className="flex-1 min-w-[180px] min-h-[38px] px-3 py-1.5 text-xs hl-input rounded-xl"
+                      />
+                      {(
+                        [
+                          { id: 'all', label: 'All' },
+                          { id: 'saved', label: `Saved (${savedCustomMeals.length})` },
+                          { id: 'common', label: 'Foods' },
+                        ] as const
+                      ).map((opt) => (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => setQuickSourceFilter(opt.id)}
+                          className={`no-touch-delay min-h-[36px] px-2.5 py-1 text-xs font-semibold rounded-lg transition-colors ${
+                            quickSourceFilter === opt.id
+                              ? 'bg-[#2563EB] text-white'
+                              : 'hl-subtle border text-slate-600 dark:text-slate-300'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </BentoCard>
+
+          {/* B. Indian Home Meals (lg:col-span-4) */}
+          <BentoCard
+            as="article"
+            interactive
+            testId="wellness-bento-indian-meals"
+            ariaLabel="Indian Home Meals – 8 video styles"
+            onClick={() => setSubTab('indian')}
+            className="md:col-span-1 lg:col-span-4 p-5 flex flex-col justify-between gap-4"
+          >
+            <div className="space-y-3.5">
+              {/* High-quality visual dish preview thumbnail */}
+              <div className="relative h-36 w-full rounded-xl overflow-hidden bg-gradient-to-br from-amber-500/20 via-orange-500/15 to-rose-500/20 border border-orange-200/70 dark:border-orange-900/50 flex items-center justify-between px-4">
+                <div className="space-y-1 z-10 max-w-[62%]">
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-white/90 dark:bg-slate-900/90 text-[11px] font-bold text-orange-600 dark:text-orange-400 shadow-2xs">
+                    8 video styles
+                  </span>
+                  <p className="text-xs font-semibold text-slate-800 dark:text-slate-100 leading-snug pt-1">
+                    Dal Tadka, Paneer Tikka, Rotis, Idli &amp; Regional Thalis
+                  </p>
+                </div>
+
+                {/* Illustrated Brass Thali Bowl Visual */}
+                <svg
+                  viewBox="0 0 96 96"
+                  className="w-24 h-24 shrink-0 drop-shadow-sm"
+                  aria-hidden="true"
+                >
+                  <circle cx="48" cy="48" r="42" fill="#FFF7ED" stroke="#F97316" strokeWidth="2.5" />
+                  <circle cx="48" cy="48" r="35" fill="#FFEDD5" />
+                  <circle cx="35" cy="36" r="11" fill="#EA580C" />
+                  <circle cx="35" cy="36" r="7" fill="#FB923C" />
+                  <circle cx="60" cy="36" r="10" fill="#16A34A" />
+                  <circle cx="60" cy="36" r="6" fill="#4ADE80" />
+                  <ellipse cx="48" cy="61" rx="18" ry="11" fill="#FDE68A" stroke="#D97706" strokeWidth="1.5" />
+                  <circle cx="44" cy="59" r="1.5" fill="#78350F" />
+                  <circle cx="53" cy="62" r="1.5" fill="#78350F" />
+                </svg>
+              </div>
+
+              <div className="space-y-1">
+                <h3 className="text-base font-bold text-slate-900 dark:text-white tracking-tight">
+                  Indian Home Meals
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                  Authentic macro-calculated dals, curries, rotis, and step-by-step recipe videos.
+                </p>
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-slate-200/75 dark:border-slate-800 flex items-center justify-between">
+              <span className="text-xs font-mono tabular-nums text-slate-500 dark:text-slate-400">
+                8 video styles
+              </span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSubTab('indian');
+                }}
+                className="no-touch-delay min-h-[36px] px-3 py-1.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold inline-flex items-center gap-1 transition-colors"
+              >
+                <span>Explore</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </BentoCard>
+
+          {/* C. Weight & Hydration Trend (lg:col-span-5) */}
+          <BentoCard
+            as="section"
+            testId="wellness-dropdown-hydration"
+            ariaLabel="Hydration & Weight Trend"
+            className="md:col-span-1 lg:col-span-5 p-5 flex flex-col justify-between gap-4"
+          >
+            <div className="space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-sky-50 dark:bg-sky-950/60 border border-sky-200/70 dark:border-sky-800/60 flex items-center justify-center text-[#0EA5E9] shrink-0">
+                    <Droplets className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900 dark:text-white tracking-tight">
+                      Hydration &amp; Weight Trend
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {currentWellbeing.waterMl.toLocaleString()} / {hydrationGoalMl.toLocaleString()} ml water
+                    </p>
+                  </div>
+                </div>
+
+                <span className="px-2.5 py-1 rounded-lg bg-sky-50 dark:bg-sky-950/50 border border-sky-200/60 dark:border-sky-800/60 text-xs font-mono tabular-nums font-bold text-[#0EA5E9]">
+                  {todayNutritionRecord.bodyweightKg} {nutritionGoals.weightUnit}
+                </span>
+              </div>
+
+              {/* Smooth SVG Line Sparkline from Real Logged Data */}
+              <div className="p-3 rounded-xl bg-slate-50/90 dark:bg-slate-800/50 border border-slate-200/75 dark:border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+                  <span>Weekly Progress</span>
+                  <span className="font-mono tabular-nums font-semibold text-slate-700 dark:text-slate-200">
+                    {realWeightSparklinePoints.length} check-in
+                    {realWeightSparklinePoints.length === 1 ? '' : 's'}
+                  </span>
+                </div>
+                <Sparkline
+                  points={realWeightSparklinePoints}
+                  stroke="#0EA5E9"
+                  fillId="bento-hydration-weight-grad"
+                  ariaLabel="Hydration and bodyweight weekly sparkline"
+                />
+              </div>
+            </div>
+
+            {/* Quick Hydration Controls */}
+            <div className="pt-2 border-t border-slate-200/75 dark:border-slate-800 space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-1.5">
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void updateWellbeingPatch({
+                        waterMl: Math.max(0, currentWellbeing.waterMl - 250),
+                      })
+                    }
+                    className="no-touch-delay min-h-[36px] px-2.5 py-1 rounded-lg hl-subtle border text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1"
+                  >
+                    <Minus className="w-3 h-3" />
+                    <span>250ml</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void updateWellbeingPatch({ waterMl: currentWellbeing.waterMl + 250 })
+                    }
+                    className="no-touch-delay min-h-[36px] px-3 py-1 rounded-lg bg-[#0EA5E9] hover:bg-sky-600 text-white text-xs font-bold flex items-center gap-1"
+                  >
+                    <Plus className="w-3 h-3" />
+                    <span>250ml</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void updateWellbeingPatch({ waterMl: currentWellbeing.waterMl + 500 })
+                    }
+                    className="no-touch-delay min-h-[36px] px-3 py-1 rounded-lg bg-slate-900 dark:bg-slate-700 text-white text-xs font-bold flex items-center gap-1"
+                  >
+                    <Plus className="w-3 h-3" />
+                    <span>500ml</span>
+                  </button>
+                </div>
+
+                <label className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+                  <span>Goal</span>
+                  <input
+                    type="number"
+                    min={1000}
+                    max={7000}
+                    step={250}
+                    value={hydrationGoalMl}
+                    onChange={(e) =>
+                      void handleUpdateHydrationGoalMl(Number(e.target.value) || 2800)
+                    }
+                    className="w-16 min-h-[34px] px-1.5 text-center font-mono tabular-nums text-xs hl-input rounded-lg"
+                  />
+                </label>
+              </div>
+            </div>
+          </BentoCard>
+
+          {/* D. Weight Status (lg:col-span-3) */}
+          <BentoCard
+            as="section"
+            testId="wellness-bento-weight-status"
+            ariaLabel="Weight Status"
+            className="md:col-span-1 lg:col-span-3 p-5 flex flex-col justify-between gap-4"
+          >
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="w-9 h-9 rounded-xl bg-violet-50 dark:bg-violet-950/60 border border-violet-200/70 dark:border-violet-800/60 flex items-center justify-center text-[#7C3AED]">
+                  <Scale className="w-4 h-4" />
+                </div>
+                <span className="px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/60 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">
+                  On Track
+                </span>
+              </div>
+
+              <div>
+                <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                  Weight Status
+                </p>
+                <p className="text-2xl font-bold font-mono tabular-nums text-slate-900 dark:text-white mt-1">
+                  {todayNutritionRecord.bodyweightKg}{' '}
+                  <span className="text-sm font-normal text-slate-500">
+                    {nutritionGoals.weightUnit}
+                  </span>
+                </p>
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-slate-200/75 dark:border-slate-800 space-y-2">
+              <button
+                type="button"
+                onClick={() => setShowWeightChartDrawer((prev) => !prev)}
+                className="no-touch-delay w-full min-h-[36px] px-3 py-1.5 rounded-xl hl-subtle border text-xs font-semibold text-slate-700 dark:text-slate-200 hover:border-violet-400 transition-colors flex items-center justify-between"
+              >
+                <span>{showWeightChartDrawer ? 'Hide Weight Log' : 'Update / Full Trend'}</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </BentoCard>
+
+          {/* E. Calm & Breathing (lg:col-span-4) */}
+          <BentoCard
+            as="section"
+            interactive
+            testId="wellness-dropdown-breathwork"
+            ariaLabel="Calm & Breathing"
+            onClick={() => setSubTab('breathing')}
+            className="md:col-span-1 lg:col-span-4 p-5 flex flex-col justify-between gap-4"
+          >
+            <div data-testid="guided-breathwork-card" className="space-y-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="w-9 h-9 rounded-xl bg-teal-50 dark:bg-teal-950/60 border border-teal-200/70 dark:border-teal-800/60 flex items-center justify-center text-teal-600 dark:text-teal-400 shrink-0">
+                  <Wind className="w-4 h-4" />
+                </div>
+                <span className="px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/60 dark:border-emerald-800/60 text-xs font-mono tabular-nums font-bold text-emerald-700 dark:text-emerald-300">
+                  Readiness {readinessScore}/100
+                </span>
+              </div>
+
+              <div className="space-y-1">
+                <h3 className="text-base font-bold text-slate-900 dark:text-white tracking-tight">
+                  Calm &amp; Breathing
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                  Unwind with gentle box, 4-7-8, or coherent breathing and ocean or rain soundscapes.
+                </p>
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-slate-200/75 dark:border-slate-800 flex items-center justify-between gap-2">
+              <span className="text-xs font-mono tabular-nums text-slate-500 dark:text-slate-400">
+                {currentWellbeing.breathworkMinutes}m logged today
+              </span>
+              <button
+                type="button"
+                data-testid="open-breathing-studio-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSubTab('breathing');
+                }}
+                className="no-touch-delay min-h-[38px] px-3.5 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold inline-flex items-center gap-1.5 transition-colors"
+              >
+                <span>Breathing</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </BentoCard>
+
+          {/* F. Sleep & Calm – Large Card (lg:col-span-8) */}
+          <BentoCard
+            as="section"
+            variant="sleep"
+            testId="wellness-bento-sleep-calm"
+            ariaLabel="Sleep & Calm"
+            className="md:col-span-2 lg:col-span-8 p-5 sm:p-6 flex flex-col justify-between gap-4"
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400">
+                  <Moon className="w-3.5 h-3.5" />
+                  <span>Sleep &amp; Calm</span>
+                </div>
+                <div className="flex items-baseline gap-2.5">
+                  <span className="text-2xl sm:text-3xl font-bold font-mono tabular-nums text-slate-900 dark:text-white">
+                    {currentWellbeing.sleepHours.toFixed(1)} hrs
+                  </span>
+                  <span className="text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-300">
+                    Steady energy
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Restorative overnight recovery supports comfortable training and calm focus.
+                </p>
+              </div>
+
+              {/* Circular Readiness Score with Heart Icon */}
+              <div className="flex items-center gap-3 p-3 rounded-2xl bg-white/85 dark:bg-slate-900/75 border border-indigo-200/70 dark:border-indigo-900/60 shrink-0">
+                <div className="relative w-14 h-14 flex items-center justify-center">
+                  <svg viewBox="0 0 56 56" className="w-14 h-14 -rotate-90">
+                    <circle
+                      cx="28"
+                      cy="28"
+                      r="23"
+                      fill="none"
+                      stroke="rgba(99, 102, 241, 0.16)"
+                      strokeWidth="5"
+                    />
+                    <circle
+                      cx="28"
+                      cy="28"
+                      r="23"
+                      fill="none"
+                      stroke="#10B981"
+                      strokeWidth="5"
+                      strokeLinecap="round"
+                      strokeDasharray={2 * Math.PI * 23}
+                      strokeDashoffset={
+                        2 * Math.PI * 23 * (1 - Math.min(100, Math.max(0, readinessScore)) / 100)
+                      }
+                    />
+                  </svg>
+                  <Heart className="w-4 h-4 text-emerald-600 dark:text-emerald-400 absolute" />
+                </div>
+                <div>
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 block">
+                    Readiness
+                  </span>
+                  <span className="text-lg font-bold font-mono tabular-nums text-slate-900 dark:text-white">
+                    {readinessScore}/100
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Subtle Animated Energy Wave */}
+            <div className="relative h-10 w-full overflow-hidden rounded-xl bg-white/60 dark:bg-slate-900/50 border border-indigo-200/50 dark:border-slate-800 flex items-center px-3">
+              <svg
+                viewBox="0 0 400 32"
+                preserveAspectRatio="none"
+                className="w-full h-6 bento-energy-wave"
+                aria-hidden="true"
+              >
+                <path
+                  d="M0 16 Q 50 4, 100 16 T 200 16 T 300 16 T 400 16"
+                  fill="none"
+                  stroke="#6366F1"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M0 20 Q 50 10, 100 20 T 200 20 T 300 20 T 400 20"
+                  fill="none"
+                  stroke="#10B981"
+                  strokeWidth="1.5"
+                  strokeOpacity="0.55"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </div>
+
+            {/* Interactive Sleep Duration Slider */}
+            <label className="block space-y-1.5 text-xs pt-1">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-slate-700 dark:text-slate-200">
+                  Adjust Hours Slept Last Night
+                </span>
+                <span className="font-mono tabular-nums font-bold text-indigo-600 dark:text-indigo-400">
+                  {currentWellbeing.sleepHours.toFixed(1)} hrs
+                </span>
+              </div>
+              <input
+                type="range"
+                min={4}
+                max={11}
+                step={0.5}
+                value={currentWellbeing.sleepHours}
+                onChange={(e) =>
+                  void updateWellbeingPatch({ sleepHours: Number(e.target.value) })
+                }
+                className="w-full accent-[#2563EB]"
+              />
+            </label>
+          </BentoCard>
+
+          {/* G. Sleep & Energy (lg:col-span-4) */}
+          <BentoCard
+            as="section"
+            testId="wellness-bento-sleep-energy"
+            ariaLabel="Sleep & Energy"
+            className="md:col-span-1 lg:col-span-4 p-5 flex flex-col justify-between gap-3.5"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/70 dark:border-emerald-800/60 flex items-center justify-center text-[#10B981]">
+                  <Moon className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white tracking-tight">
+                    Sleep &amp; Energy
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Quality {currentWellbeing.sleepQuality}/5 · Energy {currentWellbeing.energyLevel}/5
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2.5 text-xs">
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-slate-700 dark:text-slate-300">
+                    Sleep Quality
+                  </span>
+                  <span className="font-mono tabular-nums font-bold text-slate-700 dark:text-slate-200">
+                    {currentWellbeing.sleepQuality}/5
+                  </span>
+                </div>
+                <div className="grid grid-cols-5 gap-1">
+                  {([1, 2, 3, 4, 5] as const).map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => void updateWellbeingPatch({ sleepQuality: n })}
+                      className={`no-touch-delay min-h-[34px] rounded-lg font-mono tabular-nums text-xs font-semibold transition-colors ${
+                        currentWellbeing.sleepQuality === n
+                          ? 'bg-[#2563EB] text-white'
+                          : 'hl-subtle border text-slate-600 dark:text-slate-300'
+                      }`}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-slate-700 dark:text-slate-300">
+                    Energy Status
+                  </span>
+                  <span className="font-mono tabular-nums font-bold text-emerald-600 dark:text-emerald-400">
+                    {currentWellbeing.energyLevel}/5
+                  </span>
+                </div>
+                <div className="grid grid-cols-5 gap-1">
+                  {([1, 2, 3, 4, 5] as const).map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => void updateWellbeingPatch({ energyLevel: n })}
+                      className={`no-touch-delay min-h-[34px] rounded-lg font-mono tabular-nums text-xs font-semibold transition-colors ${
+                        currentWellbeing.energyLevel === n
+                          ? 'bg-[#10B981] text-white'
+                          : 'hl-subtle border text-slate-600 dark:text-slate-300'
+                      }`}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-slate-700 dark:text-slate-300">
+                    Calm / Stress (1 Calm – 5 Busy)
+                  </span>
+                  <span className="font-mono tabular-nums text-slate-500">
+                    {currentWellbeing.stressLevel}/5
+                  </span>
+                </div>
+                <div className="grid grid-cols-5 gap-1">
+                  {([1, 2, 3, 4, 5] as const).map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => void updateWellbeingPatch({ stressLevel: n })}
+                      className={`no-touch-delay min-h-[34px] rounded-lg font-mono tabular-nums text-xs font-semibold transition-colors ${
+                        currentWellbeing.stressLevel === n
+                          ? 'bg-[#2563EB] text-white'
+                          : 'hl-subtle border text-slate-600 dark:text-slate-300'
+                      }`}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </BentoCard>
+        </div>
+      )}
+
+      {/* OPTIONAL MULTI-DAY WEIGHT & CALORIE TREND DRAWER (Toggled from Weight Status Bento Card) */}
+      {subTab === 'wellbeing' && showWeightChartDrawer && (
+        <BentoCard className="p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+              Multi-Day Weight &amp; Nourishment Check-In
+            </h3>
+            <button
+              type="button"
+              onClick={() => setShowWeightChartDrawer(false)}
+              className="no-touch-delay min-h-[34px] px-2.5 py-1 rounded-lg hl-subtle border text-xs font-semibold text-slate-600 dark:text-slate-300"
+            >
+              Close
+            </button>
           </div>
-        </section>
-      </ExpandableInfoDropdown>
+          <Suspense fallback={null}>
+            <DailyNutritionWeightChart
+              nutritionByDate={nutritionByDate}
+              nutritionGoals={nutritionGoals}
+              todayIso={todayIso}
+              isDark={isDark}
+              onUpdateTodayBodyweight={handleUpdateTodayBodyweight}
+              onSaveWeightForDate={handleSaveWeightForDate}
+            />
+          </Suspense>
+        </BentoCard>
       )}
 
       {/* QUICK ADD SAVED CUSTOM MEALS DROPDOWN MODAL */}
@@ -1284,24 +1964,19 @@ export const PageWellnessHub: React.FC<PageWellnessHubProps> = ({
 
       {/* DEDICATED BREATHING TECHNIQUES SECTION (Web Audio API Ambient Tracks + Timed Inhale/Exhale) */}
       {subTab === 'breathing' && (
-        <BreathingTechniquesSection
-          currentStressLevel={currentWellbeing.stressLevel}
-          todayBreathworkMinutes={currentWellbeing.breathworkMinutes}
-          soundEnabledByDefault={preferences.soundOnTimer !== false}
-          onCompleteBreathworkMinutes={handleCompleteBreathworkMinutes}
-        />
+        <Suspense fallback={null}>
+          <BreathingTechniquesSection
+            currentStressLevel={currentWellbeing.stressLevel}
+            todayBreathworkMinutes={currentWellbeing.breathworkMinutes}
+            soundEnabledByDefault={preferences.soundOnTimer !== false}
+            onCompleteBreathworkMinutes={handleCompleteBreathworkMinutes}
+          />
+        </Suspense>
       )}
 
-      {/* CURATED INDIAN RECIPE CATALOG SEARCH & MACRO LOGGING (Collapsible Dropdown on Wellbeing, Open on Indian Tab) */}
-      {subTab === 'wellbeing' && (
-        <ExpandableInfoDropdown
-          testId="wellness-dropdown-indian-catalog"
-          title="Indian Home Cooking & Recipe Videos"
-          subtitle="Explore everyday dals, rotis, curries, and regional video guides"
-          summaryRight="8 video styles"
-          icon={<Utensils className="w-4 h-4 text-sky-600 dark:text-sky-400" />}
-          defaultOpen={false}
-        >
+      {/* CURATED INDIAN RECIPE CATALOG SEARCH & MACRO LOGGING (Open on Indian Tab) */}
+      {subTab === 'indian' && (
+        <Suspense fallback={null}>
           <IndianCatalogExplorerSection
             onAddRecipeToDailyLog={async (item) => {
               await handleQuickLogFoodOrMeal({
@@ -1310,496 +1985,7 @@ export const PageWellnessHub: React.FC<PageWellnessHubProps> = ({
               });
             }}
           />
-        </ExpandableInfoDropdown>
-      )}
-      {subTab === 'indian' && (
-        <IndianCatalogExplorerSection
-          onAddRecipeToDailyLog={async (item) => {
-            await handleQuickLogFoodOrMeal({
-              ...item,
-              useSelectedSlot: false,
-            });
-          }}
-        />
-      )}
-
-      {/* FAST SEARCH INPUT FOR SAVED CUSTOM MEALS & LOCAL COMMON FOOD DICTIONARY (Collapsed by Default) */}
-      {subTab === 'wellbeing' && (
-        <ExpandableInfoDropdown
-          title="Quick Food Lookup"
-          subtitle={`Search ${COMMON_FOOD_LOOKUP_LIST.length} everyday foods or your ${savedCustomMeals.length} saved favorites`}
-          icon={<Search className="w-4 h-4 text-sky-600 dark:text-sky-400" />}
-          defaultOpen={isQuickSearchExpanded}
-        >
-          <div className="space-y-3.5">
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-2.5 items-center">
-              <div className="lg:col-span-6 relative">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <input
-                  type="text"
-                  data-testid="wellness-food-search-input"
-                  aria-label="Search saved custom meals and common food items"
-                  value={quickFoodQuery}
-                  onChange={(e) => {
-                    setIsQuickSearchExpanded(true);
-                    setQuickFoodQuery(e.target.value);
-                  }}
-                  placeholder="Type a food (oats, eggs, rice, banana, yogurt)…"
-                  className="w-full min-h-[46px] pl-10 pr-10 py-2 text-xs sm:text-sm hl-input rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-600"
-                />
-                {quickFoodQuery && (
-                  <button
-                    type="button"
-                    onClick={() => setQuickFoodQuery('')}
-                    aria-label="Clear food search"
-                    className="no-touch-delay min-h-[40px] min-w-[40px] absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-
-              <div className="lg:col-span-3 flex items-center gap-1 p-1 rounded-xl hl-subtle border overflow-x-auto no-scrollbar">
-                {(
-                  [
-                    { id: 'all', label: 'All' },
-                    { id: 'saved', label: `Saved (${savedCustomMeals.length})` },
-                    { id: 'common', label: 'Foods' },
-                  ] as const
-                ).map((opt) => (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => setQuickSourceFilter(opt.id)}
-                    className={`no-touch-delay flex-1 min-h-[38px] px-2.5 py-1 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 ${
-                      quickSourceFilter === opt.id
-                        ? 'bg-sky-600 text-white'
-                        : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-
-              <div className="lg:col-span-3 grid grid-cols-2 gap-2">
-                <select
-                  aria-label="Quick log meal slot"
-                  value={quickMealSlot}
-                  onChange={(e) => setQuickMealSlot(e.target.value as MealEntry['mealType'])}
-                  className="min-h-[44px] px-2.5 text-xs font-semibold hl-input rounded-xl"
-                >
-                  <option value="Breakfast">Breakfast</option>
-                  <option value="Pre-Workout">Pre-Workout</option>
-                  <option value="Post-Workout">Post-Workout</option>
-                  <option value="Dinner">Dinner</option>
-                  <option value="Snack">Snack</option>
-                </select>
-
-                <select
-                  aria-label="Serving size multiplier"
-                  value={quickServingMultiplier}
-                  onChange={(e) => setQuickServingMultiplier(Number(e.target.value) || 1)}
-                  className="min-h-[44px] px-2.5 text-xs font-mono tabular-nums font-semibold hl-input rounded-xl"
-                >
-                  <option value={0.5}>0.5× serving</option>
-                  <option value={1}>1× serving</option>
-                  <option value={1.5}>1.5× serving</option>
-                  <option value={2}>2× serving</option>
-                </select>
-              </div>
-            </div>
-
-            {filteredQuickResults.saved.length === 0 &&
-            filteredQuickResults.common.length === 0 ? (
-              <div className="py-6 text-center text-xs text-slate-500 dark:text-slate-400">
-                No saved meals or common foods match &ldquo;{quickFoodQuery}&rdquo;. Try another word!
-              </div>
-            ) : (
-              <div className="max-h-72 overflow-y-auto divide-y divide-slate-200/80 dark:divide-slate-800 pr-1">
-                {filteredQuickResults.saved.map((meal) => {
-                  const scaledKcal = Math.round(meal.calories * quickServingMultiplier);
-                  const scaledP = Math.round(meal.proteinG * quickServingMultiplier);
-                  const scaledC = Math.round(meal.carbsG * quickServingMultiplier);
-                  const scaledF = Math.round(meal.fatG * quickServingMultiplier);
-                  return (
-                    <div
-                      key={meal.id}
-                      data-testid={`quick-saved-meal-${meal.id}`}
-                      className="py-2.5 flex items-center justify-between gap-3"
-                    >
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400">
-                          <span className="font-semibold text-blue-600 dark:text-blue-400">
-                            Saved Meal
-                          </span>
-                          <span aria-hidden="true">·</span>
-                          <span>{meal.mealType}</span>
-                        </div>
-                        <p className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-white truncate mt-0.5">
-                          {meal.name}
-                        </p>
-                        <p className="text-xs font-mono tabular-nums text-slate-600 dark:text-slate-300 mt-0.5">
-                          <strong className="text-slate-900 dark:text-white">
-                            {scaledKcal} kcal
-                          </strong>
-                          {' · '}
-                          <span className="text-emerald-700 dark:text-emerald-400 font-semibold">
-                            {scaledP}g P
-                          </span>
-                          {` · ${scaledC}g C · ${scaledF}g F`}
-                        </p>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() =>
-                          void handleQuickLogFoodOrMeal({
-                            name: meal.name,
-                            mealType: meal.mealType,
-                            calories: meal.calories,
-                            proteinG: meal.proteinG,
-                            carbsG: meal.carbsG,
-                            fatG: meal.fatG,
-                            useSelectedSlot: false,
-                          })
-                        }
-                        aria-label={`Quick log ${meal.name}`}
-                        className="no-touch-delay min-h-[44px] px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0"
-                      >
-                        <Plus className="w-3.5 h-3.5 shrink-0" />
-                        <span>Add</span>
-                      </button>
-                    </div>
-                  );
-                })}
-
-                {filteredQuickResults.common.map((food) => {
-                  const scaledKcal = Math.round(food.calories * quickServingMultiplier);
-                  const scaledP = Math.round(food.proteinG * quickServingMultiplier);
-                  const scaledC = Math.round(food.carbsG * quickServingMultiplier);
-                  const scaledF = Math.round(food.fatG * quickServingMultiplier);
-                  return (
-                    <div
-                      key={food.id}
-                      data-testid={`quick-common-food-${food.id}`}
-                      className="py-2.5 flex items-center justify-between gap-3"
-                    >
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400">
-                          <span>{food.category}</span>
-                          <span aria-hidden="true">·</span>
-                          <span>{food.servingLabel}</span>
-                        </div>
-                        <p className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-white truncate mt-0.5">
-                          {food.name}
-                        </p>
-                        <p className="text-xs font-mono tabular-nums text-slate-600 dark:text-slate-300 mt-0.5">
-                          <strong className="text-slate-900 dark:text-white">
-                            {scaledKcal} kcal
-                          </strong>
-                          {' · '}
-                          <span className="text-emerald-700 dark:text-emerald-400 font-semibold">
-                            {scaledP}g P
-                          </span>
-                          {` · ${scaledC}g C · ${scaledF}g F`}
-                        </p>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() =>
-                          void handleQuickLogFoodOrMeal({
-                            name: food.name,
-                            mealType: food.defaultMealType,
-                            calories: food.calories,
-                            proteinG: food.proteinG,
-                            carbsG: food.carbsG,
-                            fatG: food.fatG,
-                            useSelectedSlot: true,
-                          })
-                        }
-                        aria-label={`Quick log ${food.name}`}
-                        className="no-touch-delay min-h-[44px] px-3.5 py-2 rounded-xl hl-subtle border text-slate-800 dark:text-slate-100 hover:border-sky-500 text-xs font-semibold transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0"
-                      >
-                        <Plus className="w-3.5 h-3.5 shrink-0" />
-                        <span>Add</span>
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </ExpandableInfoDropdown>
-      )}
-
-      {/* TAB 1: DAILY HUB (Organized Collapsible Dropdown Menus for Hydration, Breathwork, Weight Chart & Check-In) */}
-      {subTab === 'wellbeing' && (
-        <div className="space-y-4">
-          <ExpandableInfoDropdown
-            testId="wellness-dropdown-hydration"
-            title="Hydration & Water Log"
-            subtitle="Add a glass or bottle and adjust your comfortable daily goal"
-            summaryRight={`${currentWellbeing.waterMl.toLocaleString()} / ${hydrationGoalMl.toLocaleString()} ml`}
-            icon={<Droplets className="w-4 h-4 text-sky-600 dark:text-sky-400" />}
-            defaultOpen={false}
-          >
-            <div className="space-y-4">
-              <svg
-                className="w-full h-3 rounded-full overflow-hidden bg-slate-200 dark:bg-slate-800"
-                viewBox="0 0 100 6"
-                preserveAspectRatio="none"
-                aria-label="Hydration progress"
-              >
-                <rect
-                  x="0"
-                  y="0"
-                  width={Math.min(
-                    100,
-                    Math.round((currentWellbeing.waterMl / Math.max(500, hydrationGoalMl)) * 100)
-                  )}
-                  height="6"
-                  className="fill-blue-600 dark:fill-blue-500 transition-all"
-                />
-              </svg>
-
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex flex-wrap items-center gap-2 min-w-0">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      void updateWellbeingPatch({
-                        waterMl: Math.max(0, currentWellbeing.waterMl - 250),
-                      })
-                    }
-                    className="no-touch-delay min-h-[44px] px-3 py-2 rounded-xl hl-subtle border text-xs font-semibold text-slate-700 dark:text-slate-200 hover:border-slate-400 flex items-center gap-1"
-                  >
-                    <Minus className="w-3.5 h-3.5" />
-                    <span>250 ml</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      void updateWellbeingPatch({ waterMl: currentWellbeing.waterMl + 250 })
-                    }
-                    className="no-touch-delay min-h-[44px] px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold flex items-center gap-1"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>1 Cup (250 ml)</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      void updateWellbeingPatch({ waterMl: currentWellbeing.waterMl + 500 })
-                    }
-                    className="no-touch-delay min-h-[44px] px-4 py-2 rounded-xl bg-slate-900 dark:bg-slate-700 hover:opacity-90 text-white text-xs font-bold flex items-center gap-1"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>1 Bottle (500 ml)</span>
-                  </button>
-                </div>
-
-                <label className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                  <span>Daily Goal</span>
-                  <input
-                    type="number"
-                    min={1000}
-                    max={7000}
-                    step={250}
-                    value={hydrationGoalMl}
-                    onChange={(e) =>
-                      void handleUpdateHydrationGoalMl(Number(e.target.value) || 3000)
-                    }
-                    className="w-20 min-h-[40px] px-2 text-center font-mono tabular-nums hl-input rounded-lg"
-                  />
-                </label>
-              </div>
-            </div>
-          </ExpandableInfoDropdown>
-
-          <ExpandableInfoDropdown
-            testId="wellness-dropdown-breathwork"
-            title="Calm Breathing & Ambient Sound"
-            subtitle="Unwind with gentle rhythmic breathing and ocean, rain, or singing bowl audio"
-            summaryRight={`${currentWellbeing.breathworkMinutes}m · Readiness ${readinessScore}/100`}
-            icon={<Wind className="w-4 h-4 text-teal-600 dark:text-teal-400" />}
-            defaultOpen={false}
-          >
-            <div
-              data-testid="guided-breathwork-card"
-              className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-            >
-              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed max-w-xl">
-                Follow a gentle inhale and exhale rhythm with soft ocean, rain, forest stream, or singing bowl soundscapes whenever you want to slow down.
-              </p>
-
-              <button
-                type="button"
-                data-testid="open-breathing-studio-btn"
-                onClick={() => setSubTab('breathing')}
-                className="no-touch-delay min-h-[46px] px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-colors whitespace-nowrap shrink-0"
-              >
-                <Wind className="w-4 h-4" />
-                <span>Open Breathing Studio</span>
-              </button>
-            </div>
-          </ExpandableInfoDropdown>
-
-          {/* Expandable Dropdown: Body Weight & Calorie Trend Chart */}
-          <ExpandableInfoDropdown
-            title="Weight & Nourishment Trend"
-            subtitle="Optional check-in for scale weight and gentle multi-day progress"
-            summaryRight={`${todayNutritionRecord.bodyweightKg} ${nutritionGoals.weightUnit}`}
-            defaultOpen={false}
-          >
-            <DailyNutritionWeightChart
-              nutritionByDate={nutritionByDate}
-              nutritionGoals={nutritionGoals}
-              todayIso={todayIso}
-              isDark={isDark}
-              onUpdateTodayBodyweight={handleUpdateTodayBodyweight}
-              onSaveWeightForDate={handleSaveWeightForDate}
-            />
-          </ExpandableInfoDropdown>
-
-          {/* Expandable Dropdown: Sleep, Energy & Recovery Check-In */}
-          <ExpandableInfoDropdown
-            title="Sleep, Energy & Mood Check-In"
-            subtitle={`${readinessLabel}`}
-            summaryRight={`Readiness ${readinessScore}/100`}
-            icon={<Heart className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />}
-            defaultOpen={false}
-          >
-            <div className="space-y-4">
-              <div className="grid grid-cols-3 gap-2.5 text-center">
-                <div className="p-3 rounded-xl hl-subtle border">
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">Mobility</p>
-                  <p className="text-base font-bold font-mono tabular-nums text-slate-900 dark:text-white mt-0.5">
-                    {currentWellbeing.mobilityMinutes}m
-                  </p>
-                </div>
-                <div className="p-3 rounded-xl hl-subtle border">
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">Cardio</p>
-                  <p className="text-base font-bold font-mono tabular-nums text-slate-900 dark:text-white mt-0.5">
-                    {currentWellbeing.cardioMinutes}m
-                  </p>
-                </div>
-                <div className="p-3 rounded-xl hl-subtle border">
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">Breathwork</p>
-                  <p className="text-base font-bold font-mono tabular-nums text-slate-900 dark:text-white mt-0.5">
-                    {currentWellbeing.breathworkMinutes}m
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <label className="block text-xs space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-slate-700 dark:text-slate-300">
-                      Hours Slept Last Night
-                    </span>
-                    <span className="font-mono tabular-nums font-bold text-slate-900 dark:text-white">
-                      {currentWellbeing.sleepHours.toFixed(1)} hrs
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min={4}
-                    max={11}
-                    step={0.5}
-                    value={currentWellbeing.sleepHours}
-                    onChange={(e) =>
-                      void updateWellbeingPatch({ sleepHours: Number(e.target.value) })
-                    }
-                    className="w-full accent-blue-600"
-                  />
-                </label>
-
-                <div className="space-y-1.5 text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-slate-700 dark:text-slate-300">
-                      How Well Did You Sleep?
-                    </span>
-                    <span className="font-mono tabular-nums text-slate-500">
-                      {currentWellbeing.sleepQuality}/5
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-5 gap-1">
-                    {([1, 2, 3, 4, 5] as const).map((n) => (
-                      <button
-                        key={n}
-                        type="button"
-                        onClick={() => void updateWellbeingPatch({ sleepQuality: n })}
-                        className={`no-touch-delay min-h-[40px] rounded-lg font-mono tabular-nums text-xs font-semibold transition-colors ${
-                          currentWellbeing.sleepQuality === n
-                            ? 'bg-sky-600 text-white'
-                            : 'hl-subtle border text-slate-600 dark:text-slate-300'
-                        }`}
-                      >
-                        {n}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="space-y-1.5 text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-slate-700 dark:text-slate-300">
-                      Energy Level Today
-                    </span>
-                    <span className="font-mono tabular-nums text-slate-500">
-                      {currentWellbeing.energyLevel}/5
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-5 gap-1">
-                    {([1, 2, 3, 4, 5] as const).map((n) => (
-                      <button
-                        key={n}
-                        type="button"
-                        onClick={() => void updateWellbeingPatch({ energyLevel: n })}
-                        className={`no-touch-delay min-h-[40px] rounded-lg font-mono tabular-nums text-xs font-semibold transition-colors ${
-                          currentWellbeing.energyLevel === n
-                            ? 'bg-emerald-600 text-white'
-                            : 'hl-subtle border text-slate-600 dark:text-slate-300'
-                        }`}
-                      >
-                        {n}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="space-y-1.5 text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-slate-700 dark:text-slate-300">
-                      Stress (1 Very Calm – 5 Busy)
-                    </span>
-                    <span className="font-mono tabular-nums text-slate-500">
-                      {currentWellbeing.stressLevel}/5
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-5 gap-1">
-                    {([1, 2, 3, 4, 5] as const).map((n) => (
-                      <button
-                        key={n}
-                        type="button"
-                        onClick={() => void updateWellbeingPatch({ stressLevel: n })}
-                        className={`no-touch-delay min-h-[40px] rounded-lg font-mono tabular-nums text-xs font-semibold transition-colors ${
-                          currentWellbeing.stressLevel === n
-                            ? 'bg-sky-600 text-white'
-                            : 'hl-subtle border text-slate-600 dark:text-slate-300'
-                        }`}
-                      >
-                        {n}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </ExpandableInfoDropdown>
-        </div>
+        </Suspense>
       )}
 
       {/* TAB: MORE INDIAN PANTRY STAPLES & CUSTOM BUILDER */}
@@ -1811,16 +1997,18 @@ export const PageWellnessHub: React.FC<PageWellnessHubProps> = ({
           icon={<Utensils className="w-4 h-4 text-orange-500" />}
           defaultOpen={true}
         >
-          <IndianNutritionSection
-            onQuickLogFood={async (item) => {
-              await handleQuickLogFoodOrMeal({
-                ...item,
-                useSelectedSlot: false,
-              });
-            }}
-            savedCustomMeals={savedCustomMeals}
-            onSaveCustomMeal={handleSaveCustomMealItem}
-          />
+          <Suspense fallback={null}>
+            <IndianNutritionSection
+              onQuickLogFood={async (item) => {
+                await handleQuickLogFoodOrMeal({
+                  ...item,
+                  useSelectedSlot: false,
+                });
+              }}
+              savedCustomMeals={savedCustomMeals}
+              onSaveCustomMeal={handleSaveCustomMealItem}
+            />
+          </Suspense>
         </ExpandableInfoDropdown>
       )}
 
@@ -2418,32 +2606,34 @@ export const PageWellnessHub: React.FC<PageWellnessHubProps> = ({
 
       {/* TAB 4: NUTRITION & CALORIES (+ INDIAN NUTRITION CATALOG) */}
       {subTab === 'nutrition' && (
-        <div className="space-y-8">
-          <Page4Calories
-            nutritionByDate={nutritionByDate}
-            goals={nutritionGoals}
-            preferences={preferences}
-            savedCustomMeals={savedCustomMeals}
-            weeklyCompletedSetsCount={weeklyCompletedSetsCount}
-            streakDays={streakDays}
-            todayActive={todayActive}
-            isDark={isDark}
-            onSaveDailyNutrition={onSaveDailyNutrition}
-            onSaveGoals={onSaveGoals}
-            onSavePreferences={onSavePreferences}
-            onSaveCustomMeals={onSaveCustomMeals}
-          />
-          <IndianNutritionSection
-            onQuickLogFood={async (item) => {
-              await handleQuickLogFoodOrMeal({
-                ...item,
-                useSelectedSlot: false,
-              });
-            }}
-            savedCustomMeals={savedCustomMeals}
-            onSaveCustomMeal={handleSaveCustomMealItem}
-          />
-        </div>
+        <Suspense fallback={null}>
+          <div className="space-y-8">
+            <Page4Calories
+              nutritionByDate={nutritionByDate}
+              goals={nutritionGoals}
+              preferences={preferences}
+              savedCustomMeals={savedCustomMeals}
+              weeklyCompletedSetsCount={weeklyCompletedSetsCount}
+              streakDays={streakDays}
+              todayActive={todayActive}
+              isDark={isDark}
+              onSaveDailyNutrition={onSaveDailyNutrition}
+              onSaveGoals={onSaveGoals}
+              onSavePreferences={onSavePreferences}
+              onSaveCustomMeals={onSaveCustomMeals}
+            />
+            <IndianNutritionSection
+              onQuickLogFood={async (item) => {
+                await handleQuickLogFoodOrMeal({
+                  ...item,
+                  useSelectedSlot: false,
+                });
+              }}
+              savedCustomMeals={savedCustomMeals}
+              onSaveCustomMeal={handleSaveCustomMealItem}
+            />
+          </div>
+        </Suspense>
       )}
 
       <WorkoutHelpModal
@@ -2455,4 +2645,5 @@ export const PageWellnessHub: React.FC<PageWellnessHubProps> = ({
       />
     </div>
   );
-};
+});
+PageWellnessHub.displayName = 'PageWellnessHub';

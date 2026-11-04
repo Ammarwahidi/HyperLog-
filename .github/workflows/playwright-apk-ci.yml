@@ -48,7 +48,7 @@ jobs:
           retention-days: 14
 
   android-claymorphism-apk-build:
-    name: Build & Verify Signed Unified Web+Native Android APK (v4.0.0 · Build 16)
+    name: Build & Verify Signed Unified Web+Native Android APK (v4.0.0 · Build 18)
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:

@@ -425,9 +425,12 @@ export const UserAuthAndPrivacyModal: React.FC<UserAuthAndPrivacyModalProps> = (
         {/* Claymorphism Top Header with Soft Inner Highlight */}
         <div className="px-5 sm:px-7 py-5 border-b border-indigo-200/70 dark:border-indigo-400/20 bg-gradient-to-b from-white/75 to-indigo-50/40 dark:from-indigo-950/40 dark:to-transparent flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-11 h-11 rounded-2xl hl-clay-auth-cta text-white flex items-center justify-center shrink-0">
-              <ShieldCheck className="w-5 h-5" />
-            </div>
+            <img
+              src="/pwa-192x192.png"
+              alt="HyperLog"
+              referrerPolicy="no-referrer"
+              className="w-11 h-11 rounded-2xl object-cover shrink-0 shadow-sm"
+            />
             <div className="min-w-0">
               <h2 className="text-base sm:text-xl font-bold tracking-tight text-slate-900 dark:text-white truncate">
                 {firebaseUser

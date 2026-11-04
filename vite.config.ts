@@ -11,6 +11,7 @@ export default defineConfig(() => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
+        injectRegister: null,
         includeAssets: ['icon.svg', 'apple-touch-icon.png', 'assets/aistudio/Workout_plan_463cf254'],
         manifest: {
           id: '/',
@@ -50,7 +51,24 @@ export default defineConfig(() => {
           cleanupOutdatedCaches: true,
           maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
-          globIgnores: ['**/downloads/**', '**/*.apk', '**/*.zip', '**/apk-manifest.json'],
+          globIgnores: [
+            '**/downloads/**',
+            '**/*.apk',
+            '**/*.zip',
+            '**/apk-manifest.json',
+            'assets/aistudio/*.png',
+            'assets/aistudio/*.jpg',
+            'assets/aistudio/*.jpeg',
+            'assets/aistudio/*.webp',
+            '**/assets/aistudio/*.png',
+            '**/assets/aistudio/*.jpg',
+            'assets/*jspdf*.js',
+            'assets/*html2canvas*.js',
+            'assets/*purify*.js',
+            'assets/*Chart*.js',
+            'assets/*firebase*.js',
+            'assets/*Modal-*.js',
+          ],
           navigateFallbackDenylist: [
             /^\/downloads\//,
             /^\/api\//,
@@ -60,6 +78,20 @@ export default defineConfig(() => {
             /\.zip$/i,
           ],
           runtimeCaching: [
+            {
+              urlPattern: /\/assets\/.*\.(?:js|css|woff2?|png|svg|webp)$/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'hyperlog-lazy-assets-cache',
+                expiration: {
+                  maxEntries: 64,
+                  maxAgeSeconds: 60 * 60 * 24 * 365,
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
             {
               urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
               handler: 'CacheFirst',
@@ -123,9 +155,34 @@ export default defineConfig(() => {
         },
       }),
     ],
+    build: {
+      target: 'es2022',
+      cssMinify: true,
+      modulePreload: {
+        resolveDependencies(_filename, deps) {
+          return deps.filter(
+            (dep) => !/(?:jspdf|html2canvas|purify|recharts|Chart|firebase|Modal)/i.test(dep)
+          );
+        },
+      },
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (!id.includes('node_modules')) return undefined;
+            if (id.includes('/react/') || id.includes('/react-dom/') || id.includes('/scheduler/')) {
+              return 'vendor-react';
+            }
+            if (id.includes('motion') || id.includes('framer-motion')) {
+              return 'vendor-motion';
+            }
+            return undefined;
+          },
+        },
+      },
+    },
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve(import.meta.dirname, '.'),
       },
     },
     server: {

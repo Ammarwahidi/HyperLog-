@@ -31,10 +31,6 @@ import {
   MESOCYCLE_WEEKS,
 } from '../data/rpPlanData';
 import {
-  INITIAL_EXERCISE_LIBRARY,
-  INITIAL_WORKOUT_TEMPLATES,
-} from '../data/exerciseCatalog';
-import {
   deriveFullWorkoutHistory,
   resolveSetLogDateISO,
 } from '../utils/workoutHistory';
@@ -43,6 +39,10 @@ import {
   computeSetLogsParityChecksum,
   sanitizeSetLogEntry,
 } from '../utils/setLogNumeric';
+import {
+  computeSetLogsParityChecksumAsync,
+  serializeBackupJsonAsync,
+} from '../utils/checksumWorkerClient';
 
 interface MesoTrackDB extends DBSchema {
   appMeta: {
@@ -755,6 +755,10 @@ export async function initializeDatabaseIfNeeded(options?: DatabaseLoadOptions) 
     }
     await txSets.done;
 
+    const { INITIAL_EXERCISE_LIBRARY, INITIAL_WORKOUT_TEMPLATES } = await import(
+      '../data/seedCatalogs'
+    );
+
     const txLib = db.transaction('exerciseLibrary', 'readwrite');
     for (const ex of INITIAL_EXERCISE_LIBRARY) {
       await txLib.store.put(ex);
@@ -783,6 +787,7 @@ export async function initializeDatabaseIfNeeded(options?: DatabaseLoadOptions) 
     await db.put('appMeta', true, 'seeded_v7_nutrition_weight_trend');
     await db.put('appMeta', true, 'seeded_v8_hypertrophy_templates_and_indian_meals');
     await db.put('appMeta', true, 'day_zero_v4_0_clean_slate');
+    await db.put('appMeta', true, 'unpreloaded_tracker_v4_1');
 
     void computeSeedCompletedIso;
     void generateInitialSetLogs;
@@ -823,29 +828,56 @@ export async function initializeDatabaseIfNeeded(options?: DatabaseLoadOptions) 
     await db.put('appMeta', true, 'day_zero_v4_0_clean_slate');
   }
 
-  // Always idempotently backfill any newly added built-in exercises or starter templates (e.g., Forearm & Grip routines)
-  const currentLibKeys = new Set((await db.getAllKeys('exerciseLibrary')).map(String));
-  const missingBuiltInExercises = INITIAL_EXERCISE_LIBRARY.filter(
-    (ex) => !currentLibKeys.has(ex.id)
-  );
-  if (missingBuiltInExercises.length > 0) {
-    const txLib = db.transaction('exerciseLibrary', 'readwrite');
-    for (const ex of missingBuiltInExercises) {
-      await txLib.store.put(ex);
+  // Idempotently backfill built-in exercises or templates if catalog was wiped or partially seeded
+  const currentLibCount = await db.count('exerciseLibrary');
+  if (currentLibCount < 800) {
+    const { INITIAL_EXERCISE_LIBRARY } = await import('../data/seedCatalogs');
+    const currentLibKeys = new Set((await db.getAllKeys('exerciseLibrary')).map(String));
+    const missingBuiltInExercises = INITIAL_EXERCISE_LIBRARY.filter(
+      (ex) => !currentLibKeys.has(ex.id)
+    );
+    if (missingBuiltInExercises.length > 0) {
+      const txLib = db.transaction('exerciseLibrary', 'readwrite');
+      for (const ex of missingBuiltInExercises) {
+        await txLib.store.put(ex);
+      }
+      await txLib.done;
     }
-    await txLib.done;
   }
 
-  const currentTplKeys = new Set((await db.getAllKeys('workoutTemplates')).map(String));
-  const missingBuiltInTemplates = INITIAL_WORKOUT_TEMPLATES.filter(
-    (tpl) => !currentTplKeys.has(tpl.id)
-  );
-  if (missingBuiltInTemplates.length > 0) {
-    const txTpl = db.transaction('workoutTemplates', 'readwrite');
-    for (const tpl of missingBuiltInTemplates) {
-      await txTpl.store.put(tpl);
+  const currentTplCount = await db.count('workoutTemplates');
+  if (currentTplCount < 10) {
+    const { INITIAL_WORKOUT_TEMPLATES } = await import('../data/seedCatalogs');
+    const currentTplKeys = new Set((await db.getAllKeys('workoutTemplates')).map(String));
+    const missingBuiltInTemplates = INITIAL_WORKOUT_TEMPLATES.filter(
+      (tpl) => !currentTplKeys.has(tpl.id)
+    );
+    if (missingBuiltInTemplates.length > 0) {
+      const txTpl = db.transaction('workoutTemplates', 'readwrite');
+      for (const tpl of missingBuiltInTemplates) {
+        await txTpl.store.put(tpl);
+      }
+      await txTpl.done;
     }
-    await txTpl.done;
+  }
+
+  // One-time v4.1 migration: clear untouched preloaded Day 1–7 exercises so Tracker starts
+  // completely un-preloaded while keeping all RP Hypertrophy data inside Workout Templates.
+  const isUnpreloadedV41 = await db.get('appMeta', 'unpreloaded_tracker_v4_1');
+  if (!isUnpreloadedV41) {
+    const existingSetLogs = await db.getAll('setLogs');
+    const hasAnyCompletedSets = existingSetLogs.some((s) => Boolean(s.completed));
+    if (!hasAnyCompletedSets) {
+      const txCleanPlan = db.transaction('workoutPlan', 'readwrite');
+      for (const emptyDay of INITIAL_WORKOUT_PLAN) {
+        await txCleanPlan.store.put(emptyDay);
+      }
+      await txCleanPlan.done;
+      await db.clear('setLogs');
+      await db.put('appMeta', null, 'activeStandaloneSession');
+      await db.put('appMeta', null, 'activeWorkoutRunState');
+    }
+    await db.put('appMeta', true, 'unpreloaded_tracker_v4_1');
   }
 
   return loadAllDatabaseState(options);
@@ -908,10 +940,19 @@ export async function loadAllDatabaseState(options?: DatabaseLoadOptions) {
       : prioritizedLibrary;
 
   const workoutTemplates = await db.getAll('workoutTemplates');
-  const categoryRank = (c: WorkoutTemplate['category']) =>
-    c === 'Custom' ? 0 : c === 'Starter' ? 1 : 2;
+  const templateSortRank = (tpl: WorkoutTemplate) => {
+    if (tpl.category === 'Custom') return 0;
+    if (
+      tpl.id.startsWith('tpl_rp_') ||
+      tpl.splitType.toLowerCase().includes('rp hypertrophy')
+    ) {
+      return 1;
+    }
+    if (tpl.category === 'Starter') return 2;
+    return 3;
+  };
   workoutTemplates.sort((a, b) => {
-    const rDiff = categoryRank(a.category) - categoryRank(b.category);
+    const rDiff = templateSortRank(a) - templateSortRank(b);
     if (rDiff !== 0) return rDiff;
     return a.name.localeCompare(b.name);
   });
@@ -1192,15 +1233,11 @@ export async function saveAppPreferences(prefs: AppPreferences): Promise<void> {
 
 export async function exportFullBackupJSON(): Promise<string> {
   const state = await loadAllDatabaseState();
-  return JSON.stringify(
-    {
-      schemaVersion: 4,
-      exportedAt: new Date().toISOString(),
-      ...state,
-    },
-    null,
-    2
-  );
+  return serializeBackupJsonAsync({
+    schemaVersion: 4,
+    exportedAt: new Date().toISOString(),
+    ...state,
+  });
 }
 
 export async function importFullBackupJSON(jsonString: string): Promise<void> {
@@ -1500,7 +1537,8 @@ export function computeWidgetProgressSnapshot(params: {
     });
   }
 
-  const weekCompletedLogs = setLogs.filter((s) => s.week === activeWeek && s.completed);
+  const weekAllLogs = setLogs.filter((s) => s.week === activeWeek);
+  const weekCompletedLogs = weekAllLogs.filter((s) => s.completed);
   const completedSets = weekCompletedLogs.length;
   let plannedSets = 0;
   for (const d of plan) {
@@ -1508,6 +1546,9 @@ export function computeWidgetProgressSnapshot(params: {
     for (const ex of d.exercises) {
       plannedSets += ex.weekSets[activeWeek] ?? 3;
     }
+  }
+  if (plannedSets === 0 && weekAllLogs.length > 0) {
+    plannedSets = weekAllLogs.length;
   }
 
   const buildSplitBar = (
@@ -1526,14 +1567,17 @@ export function computeWidgetProgressSnapshot(params: {
         }
       }
     }
+    if (target === 0) {
+      target = weekAllLogs.filter((s) => muscles.has(s.muscleId)).length;
+    }
     const cleanTarget = Math.max(1, target);
-    const progressPct = Math.min(100, Math.round((done / cleanTarget) * 100));
+    const progressPct = target === 0 && done === 0 ? 0 : Math.min(100, Math.round((done / cleanTarget) * 100));
     return {
       id,
       shortTitle,
       fullTitle,
       completedSets: done,
-      plannedSets: cleanTarget,
+      plannedSets: target > 0 ? cleanTarget : 0,
       progressPct,
     };
   };
@@ -1742,7 +1786,7 @@ export async function verifyAndRepairDatabaseParity(params: {
     db.count('workoutHistory'),
   ]);
 
-  const storageChecksum = computeSetLogsParityChecksum(normalizedLogs);
+  const storageChecksum = await computeSetLogsParityChecksumAsync(normalizedLogs);
   const storedSessionId = storedStandalone?.sessionId ?? null;
 
   const inSync =

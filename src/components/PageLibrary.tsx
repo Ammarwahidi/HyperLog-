@@ -60,6 +60,25 @@ interface PageLibraryProps {
   isSyncingOnline?: boolean;
 }
 
+const exerciseHaystackCache = new WeakMap<LibraryExercise, string>();
+
+function getExerciseSearchHaystack(
+  ex: LibraryExercise,
+  mod: ExerciseModality,
+  landmarks: Record<MuscleId, MuscleLandmark>
+): string {
+  const cached = exerciseHaystackCache.get(ex);
+  if (cached !== undefined) return cached;
+  const primName = landmarks[ex.primaryMuscle]?.name.toLowerCase() ?? '';
+  const shortName = landmarks[ex.primaryMuscle]?.shortName.toLowerCase() ?? '';
+  const secNames = ex.secondaryMuscles
+    .map((m) => landmarks[m]?.name.toLowerCase() ?? '')
+    .join(' ');
+  const built = `${ex.name} ${ex.description} ${ex.equipment} ${ex.majorGroup} ${ex.level ?? ''} ${mod} ${primName} ${shortName} ${secNames}`.toLowerCase();
+  exerciseHaystackCache.set(ex, built);
+  return built;
+}
+
 function filterInMemoryExercises(params: {
   exercises: LibraryExercise[];
   query: string;
@@ -99,12 +118,7 @@ function filterInMemoryExercises(params: {
       return false;
     }
     if (tokens.length === 0) return true;
-    const primName = params.landmarks[ex.primaryMuscle]?.name.toLowerCase() ?? '';
-    const shortName = params.landmarks[ex.primaryMuscle]?.shortName.toLowerCase() ?? '';
-    const secNames = ex.secondaryMuscles
-      .map((m) => params.landmarks[m]?.name.toLowerCase() ?? '')
-      .join(' ');
-    const haystack = `${ex.name} ${ex.description} ${ex.equipment} ${ex.majorGroup} ${ex.level ?? ''} ${mod} ${primName} ${shortName} ${secNames}`.toLowerCase();
+    const haystack = getExerciseSearchHaystack(ex, mod, params.landmarks);
     return tokens.every((tok) => haystack.includes(tok));
   });
 
@@ -116,7 +130,7 @@ function filterInMemoryExercises(params: {
   });
 }
 
-export const PageLibrary: React.FC<PageLibraryProps> = ({
+export const PageLibrary: React.FC<PageLibraryProps> = React.memo(({
   exercises,
   totalCatalogCount,
   isHydratingFullCatalog = false,
@@ -174,6 +188,9 @@ export const PageLibrary: React.FC<PageLibraryProps> = ({
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
   const inFlightOffsetRef = useRef<number | null>(null);
   const queryGenerationRef = useRef<number>(0);
+  const setLogsRef = useRef<SetLogEntry[]>(setLogs);
+  setLogsRef.current = setLogs;
+  const fullInMemoryMatchesRef = useRef<LibraryExercise[] | null>(null);
 
   const [selectedExerciseId, setSelectedExerciseId] = useState<string>(
     exercises[0]?.id ?? 'lib_bb_bench_press'
@@ -212,10 +229,14 @@ export const PageLibrary: React.FC<PageLibraryProps> = ({
     return () => window.clearTimeout(t);
   }, [searchQuery]);
 
+  const isFullCatalogInMemory =
+    !isHydratingFullCatalog &&
+    exercises.length > 0 &&
+    exercises.length >= (totalCatalogCount ?? exercises.length);
+
   // Reset to first 10 exercises & dynamically fetch Batch 0 whenever filters or catalog change
   useEffect(() => {
     const gen = ++queryGenerationRef.current;
-    inFlightOffsetRef.current = 0;
 
     if (listScrollRef.current) {
       listScrollRef.current.scrollTop = 0;
@@ -236,6 +257,16 @@ export const PageLibrary: React.FC<PageLibraryProps> = ({
     setNextBatchOffset(immediateFirstBatch.length);
     setTotalMatchedCount(immediateMatches.length);
     setHasMoreBatches(immediateMatches.length > immediateFirstBatch.length);
+
+    if (isFullCatalogInMemory) {
+      fullInMemoryMatchesRef.current = immediateMatches;
+      inFlightOffsetRef.current = null;
+      setIsFetchingBatch(false);
+      return;
+    }
+
+    fullInMemoryMatchesRef.current = null;
+    inFlightOffsetRef.current = 0;
     setIsFetchingBatch(true);
 
     let cancelled = false;
@@ -250,7 +281,7 @@ export const PageLibrary: React.FC<PageLibraryProps> = ({
       equipment: selectedEquipment,
       resolveModality: resolveExerciseModality,
       landmarks,
-      setLogsHint: setLogs,
+      setLogsHint: setLogsRef.current,
       fallbackExercises: exercises,
     })
       .then((res) => {
@@ -282,7 +313,7 @@ export const PageLibrary: React.FC<PageLibraryProps> = ({
     selectedEquipment,
     exercises,
     landmarks,
-    setLogs,
+    isFullCatalogInMemory,
   ]);
 
   // Dynamically fetch the next batch of 10 exercises as user nears the end of scrollable area
@@ -292,6 +323,21 @@ export const PageLibrary: React.FC<PageLibraryProps> = ({
     }
 
     const targetOffset = nextBatchOffset;
+    if (fullInMemoryMatchesRef.current !== null) {
+      const fullList = fullInMemoryMatchesRef.current;
+      const slice = fullList.slice(targetOffset, targetOffset + LIBRARY_BATCH_SIZE);
+      const nextOff = targetOffset + slice.length;
+      setRenderedExercises((prev) => {
+        const seenIds = new Set(prev.map((item) => item.id));
+        const uniqueIncoming = slice.filter((item) => !seenIds.has(item.id));
+        return uniqueIncoming.length > 0 ? [...prev, ...uniqueIncoming] : prev;
+      });
+      setNextBatchOffset(nextOff);
+      setTotalMatchedCount(fullList.length);
+      setHasMoreBatches(nextOff < fullList.length);
+      return;
+    }
+
     const gen = queryGenerationRef.current;
     inFlightOffsetRef.current = targetOffset;
     setIsFetchingBatch(true);
@@ -308,7 +354,7 @@ export const PageLibrary: React.FC<PageLibraryProps> = ({
         equipment: selectedEquipment,
         resolveModality: resolveExerciseModality,
         landmarks,
-        setLogsHint: setLogs,
+        setLogsHint: setLogsRef.current,
         fallbackExercises: exercises,
       });
 
@@ -340,7 +386,6 @@ export const PageLibrary: React.FC<PageLibraryProps> = ({
     selectedGroup,
     selectedEquipment,
     landmarks,
-    setLogs,
     exercises,
   ]);
 
@@ -753,7 +798,7 @@ export const PageLibrary: React.FC<PageLibraryProps> = ({
                           key={ex.id}
                           type="button"
                           onClick={() => setSelectedExerciseId(ex.id)}
-                          className={`no-touch-delay w-full min-h-[60px] text-left px-4 py-3 ${
+                          className={`no-touch-delay hl-cv-row w-full min-h-[60px] text-left px-4 py-3 ${
                             isSelected
                               ? 'bg-blue-50/75 dark:bg-blue-950/40'
                               : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
@@ -1221,4 +1266,5 @@ export const PageLibrary: React.FC<PageLibraryProps> = ({
       )}
     </div>
   );
-};
+});
+PageLibrary.displayName = 'PageLibrary';

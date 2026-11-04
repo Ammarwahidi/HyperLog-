@@ -8,7 +8,7 @@ import {
 import {
   INITIAL_EXERCISE_LIBRARY,
   INITIAL_WORKOUT_TEMPLATES,
-} from '../data/exerciseCatalog';
+} from '../data/seedCatalogs';
 import { DEFAULT_MUSCLE_LANDMARKS } from '../data/rpPlanData';
 import { OFFLINE_FOOD_CATALOG } from '../data/offlineFoodCatalog';
 import { INDIAN_RECIPES_CATALOG } from '../data/indianNutritionData';

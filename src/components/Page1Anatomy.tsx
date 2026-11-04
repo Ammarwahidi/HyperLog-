@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   ExercisePrescription,
   MajorMuscleGroup,
@@ -39,7 +39,7 @@ function formatFreqTarget(minFreq: number, maxFreq: number): string {
   return cleanMin === cleanMax ? `${cleanMin}x/wk` : `${cleanMin}–${cleanMax}x/wk`;
 }
 
-export const Page1Anatomy: React.FC<Page1AnatomyProps> = ({
+export const Page1Anatomy: React.FC<Page1AnatomyProps> = React.memo(({
   activeWeek,
   plan,
   landmarks,
@@ -62,25 +62,27 @@ export const Page1Anatomy: React.FC<Page1AnatomyProps> = ({
   const activeWeekMeta =
     MESOCYCLE_WEEKS.find((w) => w.week === activeWeek) ?? MESOCYCLE_WEEKS[2];
 
-  const handleSelectMajorGroup = (group: MajorMuscleGroup) => {
-    setSelectedMajorGroup(group);
-    setIsEditingLandmarks(false);
-    const groupMuscles = MAJOR_MUSCLE_GROUP_MAP[group];
-    if (!groupMuscles.includes(selectedMuscle) && groupMuscles.length > 0) {
-      setSelectedMuscle(groupMuscles[0]);
-    }
-  };
+  const handleSelectMajorGroup = useCallback(
+    (group: MajorMuscleGroup) => {
+      setSelectedMajorGroup(group);
+      setIsEditingLandmarks(false);
+      const groupMuscles = MAJOR_MUSCLE_GROUP_MAP[group];
+      setSelectedMuscle((prev) =>
+        !groupMuscles.includes(prev) && groupMuscles.length > 0 ? groupMuscles[0] : prev
+      );
+    },
+    []
+  );
 
-  const handleSelectMuscleFromDiagram = (muscle: MuscleId) => {
+  const handleSelectMuscleFromDiagram = useCallback((muscle: MuscleId) => {
     setSelectedMuscle(muscle);
     setIsEditingLandmarks(false);
-    if (
-      selectedMajorGroup !== MajorMuscleGroup.All &&
-      !MAJOR_MUSCLE_GROUP_MAP[selectedMajorGroup].includes(muscle)
-    ) {
-      setSelectedMajorGroup(getMuscleMajorGroup(muscle));
-    }
-  };
+    setSelectedMajorGroup((prevGroup) =>
+      prevGroup !== MajorMuscleGroup.All && !MAJOR_MUSCLE_GROUP_MAP[prevGroup].includes(muscle)
+        ? getMuscleMajorGroup(muscle)
+        : prevGroup
+    );
+  }, []);
 
   const filteredMuscles = MAJOR_MUSCLE_GROUP_MAP[selectedMajorGroup];
   const activeGroupLabel =
@@ -238,9 +240,15 @@ export const Page1Anatomy: React.FC<Page1AnatomyProps> = ({
   const calmWeeklySubtext =
     kpiSummary.totalCompletedSets === 0
       ? 'Start whenever it feels right — every completed set gently updates your muscle map.'
-      : `You have logged ${kpiSummary.totalCompletedSets} of ${kpiSummary.totalPlannedSets} scheduled sets across ${kpiSummary.sessionsLogged} ${
+      : kpiSummary.totalPlannedSets > 0
+      ? `You have logged ${kpiSummary.totalCompletedSets} of ${kpiSummary.totalPlannedSets} scheduled sets across ${kpiSummary.sessionsLogged} ${
           kpiSummary.sessionsLogged === 1 ? 'session' : 'sessions'
-        }.`;
+        }.`
+      : `You have logged ${kpiSummary.totalCompletedSets} ${
+          kpiSummary.totalCompletedSets === 1 ? 'set' : 'sets'
+        } across ${kpiSummary.sessionsLogged} ${
+          kpiSummary.sessionsLogged === 1 ? 'session' : 'sessions'
+        } this week.`;
 
   return (
     <div className="space-y-6">
@@ -301,13 +309,15 @@ export const Page1Anatomy: React.FC<Page1AnatomyProps> = ({
               </p>
               <p className="text-xl font-bold font-mono tabular-nums text-slate-900 dark:text-white mt-1 whitespace-nowrap">
                 {kpiSummary.totalCompletedSets}
-                <span className="text-xs font-normal text-slate-400 dark:text-slate-500">
-                  {' '}
-                  / {kpiSummary.totalPlannedSets}
-                </span>
+                {kpiSummary.totalPlannedSets > 0 && (
+                  <span className="text-xs font-normal text-slate-400 dark:text-slate-500">
+                    {' '}
+                    / {kpiSummary.totalPlannedSets}
+                  </span>
+                )}
               </p>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 truncate">
-                Scheduled this week
+                {kpiSummary.totalPlannedSets > 0 ? 'Scheduled this week' : 'Completed this week'}
               </p>
             </div>
 
@@ -892,4 +902,5 @@ export const Page1Anatomy: React.FC<Page1AnatomyProps> = ({
       </div>
     </div>
   );
-};
+});
+Page1Anatomy.displayName = 'Page1Anatomy';

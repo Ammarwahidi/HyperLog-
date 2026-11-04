@@ -1,5 +1,5 @@
 export const APK_BUILD_VERSION = '4.0.0';
-export const APK_BUILD_STAMP = 'v4.0-b16';
+export const APK_BUILD_STAMP = 'v4.0-b18';
 
 export const APK_FILE_NAME = 'HyperLog-v4.0-claymorphism-release.apk';
 export const APK_DOWNLOAD_PATH = `/api/download/apk/v4.0/${APK_FILE_NAME}`;

@@ -73,6 +73,9 @@ export function syncAndroidTheme(theme: AppTheme): void {
   }
 }
 
+let lastSyncedWidgetPayload = '';
+let lastSyncedBridgeRef: HyperLogNativeBridgeApi | null = null;
+
 export function syncAndroidHomeWidget(
   snapshot: WidgetProgressSnapshot,
   triggerSource: string
@@ -80,7 +83,13 @@ export function syncAndroidHomeWidget(
   const bridge = getNativeAndroidBridge();
   if (!bridge?.syncWidgetSnapshot) return;
   try {
-    bridge.syncWidgetSnapshot(JSON.stringify(snapshot), triggerSource);
+    const serialized = JSON.stringify(snapshot);
+    if (bridge === lastSyncedBridgeRef && serialized === lastSyncedWidgetPayload) {
+      return;
+    }
+    lastSyncedBridgeRef = bridge;
+    lastSyncedWidgetPayload = serialized;
+    bridge.syncWidgetSnapshot(serialized, triggerSource);
   } catch {
     // Ignore native bridge errors
   }

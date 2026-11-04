@@ -19,7 +19,7 @@ import {
   MESOCYCLE_WEEKS,
   SHEET_INSTRUCTIONS,
 } from '../data/rpPlanData';
-import { INITIAL_WORKOUT_TEMPLATES } from '../data/exerciseCatalog';
+import { INITIAL_WORKOUT_TEMPLATES } from '../data/seedCatalogs';
 import {
   MODALITY_FILTER_ORDER,
   resolveTemplateModality,
@@ -92,7 +92,20 @@ interface Page3WorkoutsProps {
   onCreateCustomExercise?: (exercise: LibraryExercise) => Promise<void>;
 }
 
-export const Page3Workouts: React.FC<Page3WorkoutsProps> = ({
+let cachedRawCsvText: string | null = null;
+const templateHaystackCache = new WeakMap<WorkoutTemplate, string>();
+
+function getTemplateSearchHaystack(tpl: WorkoutTemplate, mod: ExerciseModality): string {
+  const cached = templateHaystackCache.get(tpl);
+  if (cached !== undefined) return cached;
+  const built = `${tpl.name} ${tpl.splitType} ${tpl.description} ${mod} ${tpl.exercises
+    .map((e) => e.name)
+    .join(' ')}`.toLowerCase();
+  templateHaystackCache.set(tpl, built);
+  return built;
+}
+
+export const Page3Workouts: React.FC<Page3WorkoutsProps> = React.memo(({
   activeWeek,
   plan,
   templates,
@@ -121,7 +134,9 @@ export const Page3Workouts: React.FC<Page3WorkoutsProps> = ({
   onCreateCustomExercise,
 }) => {
   const [subTab, setSubTab] = useState<'templates' | 'schedule' | 'calendar'>('templates');
-  const [templateFilter, setTemplateFilter] = useState<'all' | 'Starter' | 'Online' | 'Custom'>('all');
+  const [templateFilter, setTemplateFilter] = useState<
+    'all' | 'RP' | 'Starter' | 'Online' | 'Custom'
+  >('all');
   const [modalityFilter, setModalityFilter] = useState<ExerciseModality>(ExerciseModality.All);
   const [templateSearch, setTemplateSearch] = useState<string>('');
   const [showWorkoutFilters, setShowWorkoutFilters] = useState<boolean>(false);
@@ -151,11 +166,19 @@ export const Page3Workouts: React.FC<Page3WorkoutsProps> = ({
   const [pickerTargetDayNumber, setPickerTargetDayNumber] = useState<number | null>(null);
 
   useEffect(() => {
+    if (!showRawSheet) return;
+    if (cachedRawCsvText !== null) {
+      setRawCsvPreview(cachedRawCsvText);
+      return;
+    }
     fetch(ATTACHED_CSV_PATH)
       .then((res) => (res.ok ? res.text() : ''))
-      .then((txt) => setRawCsvPreview(txt))
+      .then((txt) => {
+        cachedRawCsvText = txt;
+        setRawCsvPreview(txt);
+      })
       .catch(() => setRawCsvPreview(''));
-  }, []);
+  }, [showRawSheet]);
 
   const effectiveTemplates = useMemo(
     () => (templates.length > 0 ? templates : INITIAL_WORKOUT_TEMPLATES),
@@ -174,15 +197,19 @@ export const Page3Workouts: React.FC<Page3WorkoutsProps> = ({
       .map((s) => s.trim())
       .filter(Boolean);
     return effectiveTemplates.filter((t) => {
-      if (templateFilter !== 'all' && t.category !== templateFilter) return false;
+      if (templateFilter === 'RP') {
+        const isRp =
+          t.id.startsWith('tpl_rp_') || t.splitType.toLowerCase().includes('rp hypertrophy');
+        if (!isRp) return false;
+      } else if (templateFilter !== 'all' && t.category !== templateFilter) {
+        return false;
+      }
       const mod = resolveTemplateModality(t);
       if (modalityFilter !== ExerciseModality.All && mod !== modalityFilter) {
         return false;
       }
       if (tokens.length === 0) return true;
-      const haystack = `${t.name} ${t.splitType} ${t.description} ${mod} ${t.exercises
-        .map((e) => e.name)
-        .join(' ')}`.toLowerCase();
+      const haystack = getTemplateSearchHaystack(t, mod);
       return tokens.every((tok) => haystack.includes(tok));
     });
   }, [effectiveTemplates, templateFilter, modalityFilter, templateSearch]);
@@ -543,6 +570,7 @@ export const Page3Workouts: React.FC<Page3WorkoutsProps> = ({
                   {(
                     [
                       { id: 'all', label: 'All Sources' },
+                      { id: 'RP', label: 'RP Hypertrophy' },
                       { id: 'Starter', label: 'Built-In' },
                       { id: 'Online', label: 'Online Library' },
                       { id: 'Custom', label: 'My Custom' },
@@ -632,7 +660,7 @@ export const Page3Workouts: React.FC<Page3WorkoutsProps> = ({
                   <div
                     key={tpl.id}
                     data-testid={`workout-template-card-${tpl.id}`}
-                    className="hl-card rounded-2xl p-4 sm:p-5 flex flex-col justify-between space-y-4"
+                    className="hl-card hl-cv-card rounded-2xl p-4 sm:p-5 flex flex-col justify-between space-y-4"
                   >
                     <div className="space-y-3.5">
                       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-3">
@@ -926,6 +954,8 @@ export const Page3Workouts: React.FC<Page3WorkoutsProps> = ({
                           Day {day.dayNumber} ·{' '}
                           {day.isRestDay
                             ? 'Active Recovery'
+                            : day.exercises.length === 0
+                            ? 'Open Slot'
                             : `${completedSets}/${daySets.length} sets logged`}
                         </p>
                         <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white mt-0.5 leading-snug">
@@ -937,34 +967,44 @@ export const Page3Workouts: React.FC<Page3WorkoutsProps> = ({
                       </div>
 
                       <div className="flex flex-wrap items-center gap-1.5 sm:shrink-0">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setWorkoutHelpTarget(
-                              buildHelpTargetFromDayPlan(
-                                day,
-                                activeWeek,
-                                MESOCYCLE_WEEKS.find((w) => w.week === activeWeek)?.targetRir
+                        {day.exercises.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setWorkoutHelpTarget(
+                                buildHelpTargetFromDayPlan(
+                                  day,
+                                  activeWeek,
+                                  MESOCYCLE_WEEKS.find((w) => w.week === activeWeek)?.targetRir
+                                )
                               )
-                            )
-                          }
-                          className="no-touch-delay min-h-[40px] px-3 py-1.5 text-xs font-semibold hl-subtle border text-blue-600 dark:text-blue-400 hover:border-blue-500 rounded-xl transition-colors flex items-center gap-1 whitespace-nowrap"
-                          title={`How to perform ${day.title}`}
-                        >
-                          <BookOpen className="w-3.5 h-3.5" />
-                          <span>Workout Help</span>
-                        </button>
+                            }
+                            className="no-touch-delay min-h-[40px] px-3 py-1.5 text-xs font-semibold hl-subtle border text-sky-600 dark:text-sky-400 hover:border-sky-500 rounded-xl transition-colors flex items-center gap-1 whitespace-nowrap"
+                            title={`How to perform ${day.title}`}
+                          >
+                            <BookOpen className="w-3.5 h-3.5" />
+                            <span>Workout Help</span>
+                          </button>
+                        )}
 
                         <button
                           type="button"
-                          onClick={() => onOpenDayInTracker(day.dayNumber)}
+                          onClick={() =>
+                            day.exercises.length === 0 && !day.isRestDay
+                              ? setSubTab('templates')
+                              : onOpenDayInTracker(day.dayNumber)
+                          }
                           className={`no-touch-delay min-h-[42px] px-3.5 py-2 text-xs font-semibold rounded-xl transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
-                            day.isRestDay
-                              ? 'hl-subtle border text-slate-700 dark:text-slate-200 hover:border-blue-500'
-                              : 'bg-slate-900 dark:bg-blue-600 hover:opacity-90 text-white'
+                            day.isRestDay || day.exercises.length === 0
+                              ? 'hl-subtle border text-slate-700 dark:text-slate-200 hover:border-sky-500'
+                              : 'bg-slate-900 dark:bg-sky-600 hover:opacity-90 text-white'
                           }`}
                         >
-                          {day.isRestDay ? `Open Day ${day.dayNumber}` : `Track Day ${day.dayNumber}`}
+                          {day.isRestDay
+                            ? `Open Day ${day.dayNumber}`
+                            : day.exercises.length === 0
+                            ? 'Pick Template'
+                            : `Track Day ${day.dayNumber}`}
                           <ArrowRight className="w-3.5 h-3.5" />
                         </button>
                       </div>
@@ -972,8 +1012,13 @@ export const Page3Workouts: React.FC<Page3WorkoutsProps> = ({
 
                     {day.isRestDay ? (
                       <p className="text-xs text-slate-600 dark:text-slate-300 py-2 leading-relaxed">
-                        Scheduled recovery day. Assign a template from the Templates tab if you want
+                        Scheduled recovery day. Assign a template from the Routines tab if you want
                         an extra session.
+                      </p>
+                    ) : day.exercises.length === 0 ? (
+                      <p className="text-xs text-slate-600 dark:text-slate-300 py-1.5 leading-relaxed">
+                        No preloaded exercises. Assign any RP Hypertrophy or custom template from
+                        Routines, or add movements below.
                       </p>
                     ) : (
                       <div>
@@ -1418,4 +1463,5 @@ export const Page3Workouts: React.FC<Page3WorkoutsProps> = ({
       />
     </div>
   );
-};
+});
+Page3Workouts.displayName = 'Page3Workouts';

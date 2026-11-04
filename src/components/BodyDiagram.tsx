@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   MajorMuscleGroup,
   MuscleId,
@@ -59,74 +59,89 @@ const ZONE_LEGEND_DESCRIPTIONS: Record<VolumeZone, string> = {
   [VolumeZone.Overreaching]: 'Time to recover',
 };
 
-const MusclePath: React.FC<MuscleRegionProps> = ({
-  muscleId,
-  d,
-  isInActiveGroup,
-  selectedMuscle,
-  hoveredMuscle,
-  onSelect,
-  onHover,
-  fill,
-  stroke,
-  label,
-  isDark,
-}) => {
-  const isSelected = selectedMuscle === muscleId;
-  const isHovered = hoveredMuscle === muscleId;
+const MusclePath: React.FC<MuscleRegionProps> = React.memo(
+  ({
+    muscleId,
+    d,
+    isInActiveGroup,
+    selectedMuscle,
+    hoveredMuscle,
+    onSelect,
+    onHover,
+    fill,
+    stroke,
+    label,
+    isDark,
+  }) => {
+    const isSelected = selectedMuscle === muscleId;
+    const isHovered = hoveredMuscle === muscleId;
 
-  const inactiveFill = isDark ? 'var(--hl-svg-inactive)' : '#E9EEF6';
-  const inactiveStroke = isDark ? 'var(--hl-svg-bone-stroke)' : '#CBD5E1';
-  const selectedStroke = isDark ? '#F8FAFC' : '#1E1B4B';
-  const hoveredStroke = isDark ? '#E2E8F0' : '#312E81';
+    const inactiveFill = isDark ? 'var(--hl-svg-inactive)' : '#E9EEF6';
+    const inactiveStroke = isDark ? 'var(--hl-svg-bone-stroke)' : '#CBD5E1';
+    const selectedStroke = isDark ? '#F8FAFC' : '#1E1B4B';
+    const hoveredStroke = isDark ? '#E2E8F0' : '#312E81';
 
-  const effectiveFill = isInActiveGroup ? fill : inactiveFill;
-  const effectiveStroke = isInActiveGroup
-    ? isSelected
-      ? selectedStroke
+    const effectiveFill = isInActiveGroup ? fill : inactiveFill;
+    const effectiveStroke = isInActiveGroup
+      ? isSelected
+        ? selectedStroke
+        : isHovered
+        ? hoveredStroke
+        : stroke
+      : inactiveStroke;
+    const effectiveOpacity = isInActiveGroup
+      ? isSelected
+        ? 1
+        : isHovered
+        ? 0.95
+        : 0.88
       : isHovered
-      ? hoveredStroke
-      : stroke
-    : inactiveStroke;
-  const effectiveOpacity = isInActiveGroup
-    ? isSelected
-      ? 1
-      : isHovered
-      ? 0.95
-      : 0.88
-    : isHovered
-    ? 0.65
-    : 0.34;
+      ? 0.65
+      : 0.34;
 
-  return (
-    <path
-      d={d}
-      data-muscle-id={muscleId}
-      fill={effectiveFill}
-      fillOpacity={effectiveOpacity}
-      stroke={effectiveStroke}
-      strokeWidth={isInActiveGroup && isSelected ? 2.75 : isHovered ? 2.0 : 1.15}
-      strokeLinejoin="round"
-      strokeLinecap="round"
-      filter={isInActiveGroup && isSelected ? 'url(#hl-selected-muscle-glow)' : undefined}
-      className="cursor-pointer transition-all duration-150 focus:outline-none"
-      role="button"
-      tabIndex={0}
-      aria-label={label}
-      onClick={() => onSelect(muscleId)}
-      onMouseEnter={() => onHover(muscleId)}
-      onMouseLeave={() => onHover(null)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onSelect(muscleId);
-        }
-      }}
-    />
-  );
-};
+    return (
+      <path
+        d={d}
+        data-muscle-id={muscleId}
+        fill={effectiveFill}
+        fillOpacity={effectiveOpacity}
+        stroke={effectiveStroke}
+        strokeWidth={isInActiveGroup && isSelected ? 2.75 : isHovered ? 2.0 : 1.15}
+        strokeLinejoin="round"
+        strokeLinecap="round"
+        filter={isInActiveGroup && isSelected ? 'url(#hl-selected-muscle-glow)' : undefined}
+        className="cursor-pointer transition-opacity duration-150 focus:outline-none"
+        role="button"
+        tabIndex={0}
+        aria-label={label}
+        onClick={() => onSelect(muscleId)}
+        onMouseEnter={() => onHover(muscleId)}
+        onMouseLeave={() => onHover(null)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onSelect(muscleId);
+          }
+        }}
+      />
+    );
+  },
+  (prev, next) =>
+    prev.muscleId === next.muscleId &&
+    prev.d === next.d &&
+    prev.isInActiveGroup === next.isInActiveGroup &&
+    (prev.selectedMuscle === prev.muscleId) === (next.selectedMuscle === next.muscleId) &&
+    (prev.hoveredMuscle === prev.muscleId) === (next.hoveredMuscle === next.muscleId) &&
+    prev.fill === next.fill &&
+    prev.stroke === next.stroke &&
+    prev.label === next.label &&
+    prev.isDark === next.isDark &&
+    prev.onSelect === next.onSelect &&
+    prev.onHover === next.onHover
+);
+MusclePath.displayName = 'MusclePath';
 
-export const BodyDiagram: React.FC<BodyDiagramProps> = ({
+export const BodyDiagram: React.FC<BodyDiagramProps> = React.memo(({
   selectedMajorGroup,
   onSelectMajorGroup,
   selectedMuscle,
@@ -140,7 +155,14 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
     typeof window !== 'undefined' && window.innerWidth < 390 ? 'anterior' : 'dual'
   );
 
-  const allowedMuscles = new Set<MuscleId>(MAJOR_MUSCLE_GROUP_MAP[selectedMajorGroup]);
+  const handleHoverMuscle = useCallback((m: MuscleId | null) => {
+    setHoveredMuscle(m);
+  }, []);
+
+  const allowedMuscles = useMemo(
+    () => new Set<MuscleId>(MAJOR_MUSCLE_GROUP_MAP[selectedMajorGroup]),
+    [selectedMajorGroup]
+  );
   const activeGroupMuscles = MAJOR_MUSCLE_GROUP_MAP[selectedMajorGroup];
 
   const getMuscleVisual = (id: MuscleId) => {
@@ -446,7 +468,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
                       onSelect={onSelectMuscle}
-                      onHover={setHoveredMuscle}
+                      onHover={handleHoverMuscle}
                       fill={v.fill}
                       stroke={v.stroke}
                       label={v.aria}
@@ -459,7 +481,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
                       onSelect={onSelectMuscle}
-                      onHover={setHoveredMuscle}
+                      onHover={handleHoverMuscle}
                       fill={v.fill}
                       stroke={v.stroke}
                       label={v.aria}
@@ -481,7 +503,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
                       onSelect={onSelectMuscle}
-                      onHover={setHoveredMuscle}
+                      onHover={handleHoverMuscle}
                       fill={v.fill}
                       stroke={v.stroke}
                       label={v.aria}
@@ -494,7 +516,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
                       onSelect={onSelectMuscle}
-                      onHover={setHoveredMuscle}
+                      onHover={handleHoverMuscle}
                       fill={v.fill}
                       stroke={v.stroke}
                       label={v.aria}
@@ -516,7 +538,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
                       onSelect={onSelectMuscle}
-                      onHover={setHoveredMuscle}
+                      onHover={handleHoverMuscle}
                       fill={v.fill}
                       stroke={v.stroke}
                       label={v.aria}
@@ -529,7 +551,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
                       onSelect={onSelectMuscle}
-                      onHover={setHoveredMuscle}
+                      onHover={handleHoverMuscle}
                       fill={v.fill}
                       stroke={v.stroke}
                       label={v.aria}
@@ -551,7 +573,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
                       onSelect={onSelectMuscle}
-                      onHover={setHoveredMuscle}
+                      onHover={handleHoverMuscle}
                       fill={v.fill}
                       stroke={v.stroke}
                       label={v.aria}
@@ -564,7 +586,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
                       onSelect={onSelectMuscle}
-                      onHover={setHoveredMuscle}
+                      onHover={handleHoverMuscle}
                       fill={v.fill}
                       stroke={v.stroke}
                       label={v.aria}
@@ -597,7 +619,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
                       onSelect={onSelectMuscle}
-                      onHover={setHoveredMuscle}
+                      onHover={handleHoverMuscle}
                       fill={v.fill}
                       stroke={v.stroke}
                       label={v.aria}
@@ -610,7 +632,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
                       onSelect={onSelectMuscle}
-                      onHover={setHoveredMuscle}
+                      onHover={handleHoverMuscle}
                       fill={v.fill}
                       stroke={v.stroke}
                       label={v.aria}
@@ -631,7 +653,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                     selectedMuscle={selectedMuscle}
                     hoveredMuscle={hoveredMuscle}
                     onSelect={onSelectMuscle}
-                    onHover={setHoveredMuscle}
+                    onHover={handleHoverMuscle}
                     fill={v.fill}
                     stroke={v.stroke}
                     label={v.aria}
@@ -664,7 +686,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
                       onSelect={onSelectMuscle}
-                      onHover={setHoveredMuscle}
+                      onHover={handleHoverMuscle}
                       fill={v.fill}
                       stroke={v.stroke}
                       label={v.aria}
@@ -677,7 +699,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
                       onSelect={onSelectMuscle}
-                      onHover={setHoveredMuscle}
+                      onHover={handleHoverMuscle}
                       fill={v.fill}
                       stroke={v.stroke}
                       label={v.aria}
@@ -699,7 +721,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
                       onSelect={onSelectMuscle}
-                      onHover={setHoveredMuscle}
+                      onHover={handleHoverMuscle}
                       fill={v.fill}
                       stroke={v.stroke}
                       label={v.aria}
@@ -712,7 +734,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
                       onSelect={onSelectMuscle}
-                      onHover={setHoveredMuscle}
+                      onHover={handleHoverMuscle}
                       fill={v.fill}
                       stroke={v.stroke}
                       label={v.aria}
@@ -734,7 +756,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
                       onSelect={onSelectMuscle}
-                      onHover={setHoveredMuscle}
+                      onHover={handleHoverMuscle}
                       fill={v.fill}
                       stroke={v.stroke}
                       label={v.aria}
@@ -747,7 +769,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
                       onSelect={onSelectMuscle}
-                      onHover={setHoveredMuscle}
+                      onHover={handleHoverMuscle}
                       fill={v.fill}
                       stroke={v.stroke}
                       label={v.aria}
@@ -779,7 +801,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
                       onSelect={onSelectMuscle}
-                      onHover={setHoveredMuscle}
+                      onHover={handleHoverMuscle}
                       fill={v.fill}
                       stroke={v.stroke}
                       label={v.aria}
@@ -792,7 +814,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
                       onSelect={onSelectMuscle}
-                      onHover={setHoveredMuscle}
+                      onHover={handleHoverMuscle}
                       fill={v.fill}
                       stroke={v.stroke}
                       label={v.aria}
@@ -877,7 +899,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                     selectedMuscle={selectedMuscle}
                     hoveredMuscle={hoveredMuscle}
                     onSelect={onSelectMuscle}
-                    onHover={setHoveredMuscle}
+                    onHover={handleHoverMuscle}
                     fill={v.fill}
                     stroke={v.stroke}
                     label={v.aria}
@@ -898,7 +920,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
                       onSelect={onSelectMuscle}
-                      onHover={setHoveredMuscle}
+                      onHover={handleHoverMuscle}
                       fill={v.fill}
                       stroke={v.stroke}
                       label={v.aria}
@@ -911,7 +933,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
                       onSelect={onSelectMuscle}
-                      onHover={setHoveredMuscle}
+                      onHover={handleHoverMuscle}
                       fill={v.fill}
                       stroke={v.stroke}
                       label={v.aria}
@@ -933,7 +955,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
                       onSelect={onSelectMuscle}
-                      onHover={setHoveredMuscle}
+                      onHover={handleHoverMuscle}
                       fill={v.fill}
                       stroke={v.stroke}
                       label={v.aria}
@@ -946,7 +968,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
                       onSelect={onSelectMuscle}
-                      onHover={setHoveredMuscle}
+                      onHover={handleHoverMuscle}
                       fill={v.fill}
                       stroke={v.stroke}
                       label={v.aria}
@@ -980,7 +1002,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
                       onSelect={onSelectMuscle}
-                      onHover={setHoveredMuscle}
+                      onHover={handleHoverMuscle}
                       fill={v.fill}
                       stroke={v.stroke}
                       label={v.aria}
@@ -993,7 +1015,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
                       onSelect={onSelectMuscle}
-                      onHover={setHoveredMuscle}
+                      onHover={handleHoverMuscle}
                       fill={v.fill}
                       stroke={v.stroke}
                       label={v.aria}
@@ -1015,7 +1037,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
                       onSelect={onSelectMuscle}
-                      onHover={setHoveredMuscle}
+                      onHover={handleHoverMuscle}
                       fill={v.fill}
                       stroke={v.stroke}
                       label={v.aria}
@@ -1028,7 +1050,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
                       onSelect={onSelectMuscle}
-                      onHover={setHoveredMuscle}
+                      onHover={handleHoverMuscle}
                       fill={v.fill}
                       stroke={v.stroke}
                       label={v.aria}
@@ -1050,7 +1072,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
                       onSelect={onSelectMuscle}
-                      onHover={setHoveredMuscle}
+                      onHover={handleHoverMuscle}
                       fill={v.fill}
                       stroke={v.stroke}
                       label={v.aria}
@@ -1063,7 +1085,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
                       onSelect={onSelectMuscle}
-                      onHover={setHoveredMuscle}
+                      onHover={handleHoverMuscle}
                       fill={v.fill}
                       stroke={v.stroke}
                       label={v.aria}
@@ -1085,7 +1107,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
                       onSelect={onSelectMuscle}
-                      onHover={setHoveredMuscle}
+                      onHover={handleHoverMuscle}
                       fill={v.fill}
                       stroke={v.stroke}
                       label={v.aria}
@@ -1098,7 +1120,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
                       onSelect={onSelectMuscle}
-                      onHover={setHoveredMuscle}
+                      onHover={handleHoverMuscle}
                       fill={v.fill}
                       stroke={v.stroke}
                       label={v.aria}
@@ -1130,7 +1152,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
                       onSelect={onSelectMuscle}
-                      onHover={setHoveredMuscle}
+                      onHover={handleHoverMuscle}
                       fill={v.fill}
                       stroke={v.stroke}
                       label={v.aria}
@@ -1143,7 +1165,7 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
                       selectedMuscle={selectedMuscle}
                       hoveredMuscle={hoveredMuscle}
                       onSelect={onSelectMuscle}
-                      onHover={setHoveredMuscle}
+                      onHover={handleHoverMuscle}
                       fill={v.fill}
                       stroke={v.stroke}
                       label={v.aria}
@@ -1244,4 +1266,5 @@ export const BodyDiagram: React.FC<BodyDiagramProps> = ({
       </div>
     </div>
   );
-};
+});
+BodyDiagram.displayName = 'BodyDiagram';

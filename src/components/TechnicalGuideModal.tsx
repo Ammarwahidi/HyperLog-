@@ -144,11 +144,11 @@ export const TechnicalGuideModal: React.FC<TechnicalGuideModalProps> = ({
     }
   };
 
-  const apkUrl = `${manifest?.apkUrl || APK_DOWNLOAD_PATH}?v=4.0.0-b16`;
+  const apkUrl = `${manifest?.apkUrl || APK_DOWNLOAD_PATH}?v=4.0.0-b18`;
   const apkFileName = manifest?.apkFileName || APK_FILE_NAME;
-  const bundleUrl = `${manifest?.bundleUrl || BUNDLE_ZIP_DOWNLOAD_PATH}?v=4.0.0-b16`;
+  const bundleUrl = `${manifest?.bundleUrl || BUNDLE_ZIP_DOWNLOAD_PATH}?v=4.0.0-b18`;
   const bundleFileName = manifest?.bundleFileName || BUNDLE_ZIP_FILE_NAME;
-  const sourceZipUrl = `${manifest?.sourceZipUrl || SOURCE_ZIP_DOWNLOAD_PATH}?v=4.0.0-b16`;
+  const sourceZipUrl = `${manifest?.sourceZipUrl || SOURCE_ZIP_DOWNLOAD_PATH}?v=4.0.0-b18`;
   const sourceZipFileName = manifest?.sourceZipFileName || SOURCE_ZIP_FILE_NAME;
   const directApkLink =
     typeof window !== 'undefined' ? `${window.location.origin}${apkUrl}` : apkUrl;
@@ -235,7 +235,7 @@ export const TechnicalGuideModal: React.FC<TechnicalGuideModalProps> = ({
                       {apkFileName}
                     </h3>
                     <p className="text-xs text-slate-300">
-                      Unified Android 8.0–15 release (v4.0.0 · Build 16) rendering the exact same UI/UX
+                      Unified Android 8.0–15 release (v4.0.0 · Build 18) rendering the exact same UI/UX
                       across all 6 pages as the Web App 100% offline, bridged to Android Health Connect,
                       live Home Screen Streak Widget, hardware haptics, and native PDF/JSON sharing.
                     </p>
